@@ -7,12 +7,6 @@
 
 ---
 
-## 演示视频（60 秒）
-
-[▶ 观看介绍视频（1080p · 有声）](https://github.com/ssodeeth/dsh-bicameral-mind/releases/download/v1.0.0/bicameral-mind-60s.mp4)
-
-快速了解双脑结构、三种纠偏时刻，以及「内心对话」视图与设置页。
-
 ## 两个声音
 
 | | 左脑 Actor | 右脑 Examiner |
