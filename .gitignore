@@ -1,0 +1,18 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tgz
+
+# 本地/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+*.tmp
+.env
+.env.*
+
+# 发布前检查生成的临时文件
+*.bak
+scratch/

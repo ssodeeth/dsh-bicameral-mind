@@ -1,0 +1,40 @@
+- insert:
+    - id: bicameral-mind
+      name: 'dsh-bicameral-mind'
+      config:
+        enabled: true
+        language: auto
+        maxIssues: 3
+        autoReview:
+          enabled: true
+          tools:
+            - write
+            - edit
+            - pwsh
+            - bash
+            - run_code
+            - delete_file
+            - move_file
+          cooldownMs: 15000
+          maxPerTurn: 6
+          timeoutMs: 20000
+          maxTokens: 700
+          finishGate: true
+          subagents: false
+        tool:
+          defaultDepth: quick
+          fullStages:
+            - plan
+            - finish
+          timeoutMs: 30000
+        voices:
+          actor:
+            fallbackToAgentRoute: true
+          examiner:
+            # 默认跟随会话路由：右脑与左脑同一 provider，不跨信任边界。
+            # 想用另一个模型做右脑：在设置页选择，或执行
+            #   /bicameral voice examiner <provider> <model>
+            # 候选降级链同样在设置页配置；这里不预置任何本机 provider。
+            fallbackToAgentRoute: true
+            maxTokensQuick: 1600
+            maxTokensFull: 2200

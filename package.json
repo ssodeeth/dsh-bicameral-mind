@@ -1,0 +1,71 @@
+{
+  "name": "dsh-bicameral-mind",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Bicameral Mind for DeepSeek Harness: a left-brain actor and an independently routed right-brain examiner (potentially a different model) that correct each other while the agent works.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "dsh-bundle",
+    "agent",
+    "llm",
+    "bicameral",
+    "two-voice",
+    "deliberation",
+    "critic",
+    "reviewer",
+    "self-correction",
+    "ai-agent",
+    "plugin"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check client.js && node --check src/command.js && node --check src/config.js && node --check src/examiner.js && node --check src/prompt.js && node --check src/runtime.js && node --check src/state.js && node --check src/tool.js && node --check src/util.js && node --check src/voice.js && node --check src/webui.js",
+    "test": "node --test test/examiner.test.mjs test/plugin.mock.test.mjs",
+    "verify": "npm run check && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ssodeeth/dsh-bicameral-mind.git"
+  },
+  "homepage": "https://github.com/ssodeeth/dsh-bicameral-mind#readme",
+  "bugs": {
+    "url": "https://github.com/ssodeeth/dsh-bicameral-mind/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "icon": "./icon.svg",
+  "license": "MIT"
+}
