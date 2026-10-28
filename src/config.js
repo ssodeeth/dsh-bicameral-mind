@@ -151,15 +151,20 @@ export function normalizeConfig(config, fileSettings = {}, overrides = {}) {
 	const rawActor = layered(base.voices?.actor, file.voices?.actor, live.voices?.actor, base.voice?.actor)
 	const rawExaminer = layered(base.voices?.examiner, file.voices?.examiner, live.voices?.examiner, base.voice?.examiner, base.voice)
 	const rawAuto = layered(base.autoReview, file.autoReview, live.autoReview)
-	const rawTool = base.tool !== null && typeof base.tool === 'object' ? base.tool : {}
+	const rawTool = layered(base.tool, file.tool, live.tool)
 
 	const enabled = [live.enabled, file.enabled, base.enabled].find((value) => typeof value === 'boolean')
 	const language = [live.language, file.language, base.language].find((value) => ['zh', 'en', 'auto'].includes(value)) ?? 'auto'
+	const intervention = [live.intervention, file.intervention, base.intervention].find((value) =>
+		['off', 'advisory', 'balanced', 'strict', 'paranoid', 'custom'].includes(value),
+	) ?? 'custom'
+	const maxIssuesRaw = [live.maxIssues, file.maxIssues, base.maxIssues].find((value) => Number.isFinite(value))
 
 	return {
 		enabled: enabled !== false,
 		language,
-		maxIssues: clampInt(base.maxIssues, 1, 5, 3),
+		intervention,
+		maxIssues: clampInt(maxIssuesRaw, 1, 5, 3),
 		voices: {
 			actor: normalizeVoiceRole(rawActor),
 			examiner: normalizeVoiceRole(rawExaminer),
@@ -175,6 +180,8 @@ export function normalizeConfig(config, fileSettings = {}, overrides = {}) {
 			subagents: rawAuto.subagents === true,
 			logPasses: rawAuto.logPasses === true,
 			finishGate: rawAuto.finishGate !== false,
+			// Stronger levels review the final answer even with no pending issues.
+			finishAlways: rawAuto.finishAlways === true,
 			// Read-only shell commands are not reviewed: reviewing `Get-Content`
 			// produced false "you wrote README" objections.
 			shellReadGuard: rawAuto.shellReadGuard !== false,

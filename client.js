@@ -104,6 +104,11 @@ window.__ModuleLoader__.load({
 				// Settings page ("settings.section").
 				nav: "二分心智",
 				"set.heading": "二分心智 · 双声",
+				"set.levelTitle": "介入程度",
+				"set.levelHint": "一次选择一组参数；手动改下面的参数会变成『自定义』。",
+				"set.levelCustom": "当前参数为自定义，不符合任何预设。",
+				"set.levelApplying": "正在应用…",
+				"set.levelSwitched": "已切换到「{title}」",
 				"set.intro": "左脑＝执行者（会话模型）；右脑＝校正者（独立模型），可配成另一个模型。",
 				"set.enabled": "启用二分心智",
 				"set.enabledHint": "总开关。关闭后右脑不再自动插话，审议工具仍可手动调用。",
@@ -211,6 +216,11 @@ window.__ModuleLoader__.load({
 				// Settings page ("settings.section").
 				nav: "Bicameral Mind",
 				"set.heading": "Bicameral Mind · Two Voices",
+				"set.levelTitle": "Intervention level",
+				"set.levelHint": "One choice applies a whole parameter set; editing the values below turns it into “custom”.",
+				"set.levelCustom": "The current parameters are custom and match no preset.",
+				"set.levelApplying": "Applying…",
+				"set.levelSwitched": "Switched to “{title}”",
 				"set.intro": "Left brain = the executor (session model); Right brain = the corrector (an independent model, possibly a different one).",
 				"set.enabled": "Enable Bicameral Mind",
 				"set.enabledHint": "Master switch. When off, the right brain stops interjecting; the review tool still works on demand.",
@@ -1232,6 +1242,89 @@ window.__ModuleLoader__.load({
   opacity: .5;
   cursor: default;
 }
+.bcm-set-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bcm-set-level {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: .5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-md, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bcm-set-level:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.bcm-set-level:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+.bcm-set-level[aria-checked="true"] {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-interactive-bg-hover-accent, var(--dsw-alias-bg-layer-2));
+}
+.bcm-set-level:disabled {
+  opacity: .5;
+  cursor: default;
+}
+.bcm-set-levelText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.bcm-set-levelTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.bcm-set-levelDesc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.bcm-set-levelMark {
+  flex: none;
+  color: var(--dsw-alias-brand-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.bcm-set-levelCustom {
+  margin: 0;
+  color: var(--dsw-alias-state-warn-label, var(--dsw-alias-state-warn-primary));
+  font-size: 11px;
+  line-height: 15px;
+}
+.bcm-set-levelError {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+.bcm-set-levelBusy {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 15px;
+}
 `;
 
 		/** `HH:MM` in the viewer's local zone, tolerant of missing/forged data. */
@@ -2166,6 +2259,8 @@ window.__ModuleLoader__.load({
 			/** Candidate row whose provider input should receive focus after render. */
 			const [focusCandidate, setFocusCandidate] = React.useState(null);
 			const candidateRefs = React.useRef([]);
+			const [levelBusy, setLevelBusy] = React.useState(false);
+			const [levelError, setLevelError] = React.useState("");
 
 			/** Translate through the locale service, falling back to built-in copy. */
 			const tx = React.useCallback((key, params) => {
@@ -2212,6 +2307,7 @@ window.__ModuleLoader__.load({
 						setView(payload);
 						setDraft(draftFromSettings(payload.settings));
 						setConfigState("ready");
+						setLevelError("");
 					} catch {
 						if (disposed) return;
 						setConfigState("failed");
@@ -2288,6 +2384,12 @@ window.__ModuleLoader__.load({
 			const actorRoutes = routeList(routes.actor);
 			const examinerRoutes = routeList(routes.examiner);
 			const settingsPath = view !== null && typeof view.settingsPath === "string" ? view.settingsPath : "";
+			/** Intervention-level presets served by the Host, and the active one. */
+			const levels = view !== null && Array.isArray(view.levels)
+				? view.levels.filter((entry) => entry !== null && typeof entry === "object" && typeof entry.id === "string" && entry.id.length > 0)
+				: [];
+			const currentLevel = view !== null && typeof view.level === "string" ? view.level : "custom";
+			const levelCustom = !levels.some((entry) => entry.id === currentLevel);
 			/** Whether the catalog can offer at least one complete route. */
 			const hasCatalogRoute = providers.some((entry) => entry !== null && typeof entry === "object"
 				&& Array.isArray(entry.models)
@@ -2639,6 +2741,45 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			/**
+			 * Apply one intervention-level preset. The Host replaces the whole
+			 * parameter set, so the response becomes the new config AND the
+			 * unsaved local draft is discarded.
+			 */
+			const applyLevel = async (levelId) => {
+				if (levelBusy || saving || draft === null) return;
+				setLevelBusy(true);
+				setLevelError("");
+				try {
+					const response = await fetch("/bicameral-mind/level", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ level: levelId }),
+					});
+					const payload = await readJsonResponse(response);
+					if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true) {
+						const message = payload !== null && typeof payload === "object" && typeof payload.message === "string" && payload.message.length > 0
+							? payload.message
+							: `HTTP ${response.status}`;
+						throw new Error(message);
+					}
+					const applied = typeof payload.level === "string" ? payload.level : levelId;
+					const preset = Array.isArray(payload.levels)
+						? payload.levels.find((entry) => entry !== null && typeof entry === "object" && entry.id === applied)
+						: undefined;
+					const title = preset !== undefined && typeof preset.title === "string" && preset.title.length > 0 ? preset.title : applied;
+					setView(payload);
+					setDraft(draftFromSettings(payload.settings));
+					setConfigState("ready");
+					setStatus({ kind: "saved", message: tx("set.levelSwitched", { title }) });
+				} catch (reason) {
+					const message = reason instanceof Error && reason.message.length > 0 ? reason.message : String(reason);
+					setLevelError(message);
+				} finally {
+					setLevelBusy(false);
+				}
+			};
+
 			const renderSwitch = (checked, onChange, labelText, disabled) => h("button", {
 				type: "button",
 				className: "bcm-set-switch",
@@ -2925,6 +3066,49 @@ window.__ModuleLoader__.load({
 				),
 			);
 
+			const levelCard = levels.length === 0
+				? null
+				: h(
+					"section",
+					{ className: "bcm-set-card" },
+					h("h3", { className: "bcm-set-cardTitle" }, tx("set.levelTitle")),
+					h("p", { className: "bcm-set-cardDesc", title: tx("set.levelHint") }, tx("set.levelHint")),
+					levelCustom ? h("p", { className: "bcm-set-levelCustom" }, tx("set.levelCustom")) : null,
+					h(
+						"div",
+						{ className: "bcm-set-levels", role: "radiogroup", "aria-label": tx("set.levelTitle") },
+						levels.map((entry) => {
+							const id = entry.id;
+							const active = !levelCustom && currentLevel === id;
+							const description = typeof entry.description === "string" ? entry.description : "";
+							const title = typeof entry.title === "string" && entry.title.length > 0 ? entry.title : id;
+							return h(
+								"button",
+								{
+									type: "button",
+									className: "bcm-set-level",
+									key: id,
+									role: "radio",
+									"aria-checked": active ? "true" : "false",
+									"data-level": id,
+									title: description,
+									disabled: levelBusy || saving,
+									onClick: () => applyLevel(id),
+								},
+								h(
+									"span",
+									{ className: "bcm-set-levelText" },
+									h("span", { className: "bcm-set-levelTitle" }, title),
+									description.length === 0 ? null : h("span", { className: "bcm-set-levelDesc" }, description),
+								),
+								h("span", { className: "bcm-set-levelMark", "aria-hidden": true }, active ? "\u2713" : ""),
+							);
+						}),
+					),
+					levelError.length > 0 ? h("p", { className: "bcm-set-levelError", role: "status" }, levelError) : null,
+					levelBusy ? h("p", { className: "bcm-set-levelBusy", role: "status" }, tx("set.levelApplying")) : null,
+				);
+
 			const examinerProbeKey = "examiner";
 			const examinerCard = h(
 				"section",
@@ -3134,6 +3318,7 @@ window.__ModuleLoader__.load({
 					{ className: "bcm-set-root", "data-bicameral-mind-settings": true },
 					headerRow,
 					banner,
+					levelCard,
 					examinerCard,
 					actorCard,
 					autoCard,

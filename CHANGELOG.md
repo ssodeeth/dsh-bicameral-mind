@@ -2,6 +2,21 @@
 
 本项目的所有重要变更都记录在这个文件里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-10-28
+
+### 新增
+
+- **介入程度档位**：设置页与 `/bicameral level` 新增统一的五档预设——`off`（关闭）、`advisory`（提示）、`balanced`（标准，默认）、`strict`（严格）、`paranoid`（偏执）。
+  - 每个档位一次性确定自动复审范围、冷却、每轮预算、收尾模式与审议深度；手调任一参数后显示为「自定义」。
+  - `strict` 复审所有工具动作、每轮收尾必审；`paranoid` 连只读命令也复审、默认完整辩论、冷却 0、预算最高。
+  - `autoReview.tools` 支持 `*` 通配；新增 `autoReview.finishAlways`（无未决问题也审收尾）。
+  - 设置页新增「介入程度」卡片；新增 `POST /bicameral-mind/level` 与 `/bicameral level` 命令。
+- 修复 `tool.*`（默认深度 / 完整审议阶段）此前只读取静态 patch、未叠加用户 settings.json 的问题。
+
+### 验证
+
+- 62 项 `node --test` 通过（新增档位映射、通配复审、偏执只读复审、严格收尾必审、档位路由与命令测试）。
+
 ## [1.0.0] - 2026-10-27
 
 ### 新增

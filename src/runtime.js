@@ -37,6 +37,12 @@ import {
 	parseAdvocateReply,
 	parseExaminerOutput,
 } from './examiner.js'
+import {
+	detectLevel,
+	LEVELS,
+	presetPatch,
+	REVIEW_ALL,
+} from './levels.js'
 import { promptText } from './prompt.js'
 import { BicameralStore } from './state.js'
 import {
@@ -461,7 +467,7 @@ export function createRuntime(ctx, config) {
 		})
 		const cfg = settings
 		if (!cfg.enabled || !cfg.autoReview.enabled) return
-		if (!cfg.autoReview.tools.includes(exec.name)) return
+		if (!cfg.autoReview.tools.includes(REVIEW_ALL) && !cfg.autoReview.tools.includes(exec.name)) return
 		if (cfg.autoReview.shellReadGuard && isClearlyReadOnlyShell(exec.name, exec.arguments)) return
 		if (isSubagent(agent) && cfg.autoReview.subagents !== true) return
 		if (result?.isError === true && cfg.autoReview.includeErrors === false) return
@@ -510,7 +516,7 @@ export function createRuntime(ctx, config) {
 			claim: '',
 			evidence,
 			task: state.task,
-			depth: 'quick',
+			depth: cfg.tool.defaultDepth,
 			signal: payload.signal,
 			origin: 'auto',
 			toolName: trigger.name,
@@ -589,7 +595,7 @@ export function createRuntime(ctx, config) {
 		if (isSubagent(agent) && cfg.autoReview.subagents !== true) return
 		const state = store.peek(agent.id)
 		if (state === undefined) return
-		if (state.pendingIssues.length === 0) return
+		if (state.pendingIssues.length === 0 && cfg.autoReview.finishAlways !== true) return
 		if (state.reviewing === true) return
 		const turn = Number.isSafeInteger(payload.turn) ? payload.turn : state.turn
 		if (state.finishGateTurn === turn) return
@@ -598,18 +604,24 @@ export function createRuntime(ctx, config) {
 		state.finishGateTurn = turn
 		state.reviewing = true
 		try {
-			const evidence = [
-				`左脑的最终回答：\n${truncate(finalText, 1600)}`,
-				`此前右脑提出、但尚未确认处理的问题：\n${store.pendingIssuesText(agent.id)}`,
-				`请判断最终回答是否已实际回应并解决这些问题（不是口头承认）。`,
-			].join('\n\n')
+			const pending = store.pendingIssuesText(agent.id)
+			const evidence = cfg.autoReview.finishAlways === true && pending.length === 0
+				? [
+						`左脑的最终回答：\n${truncate(finalText, 1600)}`,
+						`本轮没有未决问题；请独立判断任务是否真的完成、是否有未经证实的断言、是否有遗漏的验证。`,
+					].join('\n\n')
+				: [
+						`左脑的最终回答：\n${truncate(finalText, 1600)}`,
+						`此前右脑提出、但尚未确认处理的问题：\n${pending}`,
+						`请判断最终回答是否已实际回应并解决这些问题（不是口头承认）。`,
+					].join('\n\n')
 			const outcome = await review({
 				agent,
 				stage: 'finish',
 				claim: '我认为任务已经完成，准备结束本轮。',
 				evidence,
 				task: state.task,
-				depth: 'quick',
+				depth: cfg.autoReview.finishAlways === true ? 'full' : 'quick',
 				signal: payload.signal,
 				origin: 'auto',
 				toolName: '收尾检查',
@@ -639,12 +651,15 @@ export function createRuntime(ctx, config) {
 	function statusText(agent) {
 		const cfg = settings
 		const state = agent?.id === undefined ? undefined : store.peek(agent.id)
+		const level = detectLevel(cfg)
+		const levelMeta = LEVELS.find((item) => item.id === level)
 		const lines = [
 			`二分心智：${cfg.enabled ? '已启用' : '已关闭'}`,
+			`介入程度：${levelMeta ? `${levelMeta.title}（${level}）` : '自定义（custom）'}`,
 			`左脑模型：${describeVoice(agent, 'actor')}（默认跟随会话路由）`,
 			`右脑模型：${describeVoice(agent, 'examiner')}${cfg.voices.examiner.provider && cfg.voices.examiner.model ? '（已钉死）' : '（默认跟随会话路由，可用 /bicameral voice examiner <provider> <model> 指定不同模型）'}`,
-			`自动插话：${cfg.autoReview.enabled ? '开' : '关'}，监视 ${cfg.autoReview.tools.join('/') || '（空）'}，冷却 ${cfg.autoReview.cooldownMs}ms，每轮上限 ${cfg.autoReview.maxPerTurn}`,
-			`收尾闸门：${cfg.autoReview.finishGate ? '开' : '关'}；默认审议深度：${cfg.tool.defaultDepth}（完整审议阶段：${cfg.tool.fullStages.join('/') || '无'}）`,
+			`自动插话：${cfg.autoReview.enabled ? '开' : '关'}，监视 ${cfg.autoReview.tools.includes(REVIEW_ALL) ? '全部工具' : cfg.autoReview.tools.join('/') || '（空）'}，冷却 ${cfg.autoReview.cooldownMs}ms，每轮上限 ${cfg.autoReview.maxPerTurn}`,
+			`收尾闸门：${cfg.autoReview.finishGate ? (cfg.autoReview.finishAlways ? '开（每轮必审）' : '开（仅未决问题）') : '关'}；默认审议深度：${cfg.tool.defaultDepth}（完整审议阶段：${cfg.tool.fullStages.join('/') || '无'}）`,
 		]
 		if (state !== undefined) {
 			lines.push(`当前任务锚点：${state.task.length > 0 ? truncate(state.task, 200) : '（尚未捕获用户任务）'}`)
@@ -798,6 +813,19 @@ export function createRuntime(ctx, config) {
 			if (!['zh', 'en', 'auto'].includes(language)) errors.push('language 必须是 zh / en / auto')
 			else next.language = language
 		}
+		if ('intervention' in patch) {
+			const intervention = readString(patch.intervention, 20)
+			if (!['off', 'advisory', 'balanced', 'strict', 'paranoid', 'custom'].includes(intervention)) {
+				errors.push('intervention 必须是 off / advisory / balanced / strict / paranoid / custom')
+			} else {
+				next.intervention = intervention
+			}
+		}
+		if ('maxIssues' in patch) {
+			const maxIssues = readInt(patch.maxIssues, 1, 5)
+			if (maxIssues === undefined) errors.push('maxIssues 必须在 1..5 之间')
+			else next.maxIssues = maxIssues
+		}
 		if (patch.voices !== undefined) {
 			if (patch.voices === null || typeof patch.voices !== 'object' || Array.isArray(patch.voices)) {
 				errors.push('voices 必须是对象')
@@ -836,7 +864,7 @@ export function createRuntime(ctx, config) {
 				errors.push('autoReview 必须是对象')
 			} else {
 				const value = {}
-				for (const key of ['enabled', 'includeErrors', 'subagents', 'logPasses', 'finishGate', 'shellReadGuard']) {
+				for (const key of ['enabled', 'includeErrors', 'subagents', 'logPasses', 'finishGate', 'finishAlways', 'shellReadGuard']) {
 					if (!(key in raw)) continue
 					if (typeof raw[key] !== 'boolean') errors.push(`autoReview.${key} 必须是布尔值`)
 					else value[key] = raw[key]
@@ -878,6 +906,20 @@ export function createRuntime(ctx, config) {
 		if (errors.length > 0) return { ok: false, message: errors.join('；') }
 		const outcome = applyChange((settingsFile) => mergeInto(settingsFile, next))
 		return outcome.ok ? { ok: true } : outcome
+	}
+
+	/**
+	 * Apply one intervention level: the preset fully replaces every knob the
+	 * level controls and is persisted in the plugin settings file.
+	 */
+	function applyLevel(levelId) {
+		const id = typeof levelId === 'string' ? levelId.trim().toLowerCase() : ''
+		const patch = presetPatch(id)
+		if (patch === undefined) {
+			return { ok: false, message: `未知档位：${id || '（空）'}；可选 ${LEVELS.map((level) => level.id).join(' / ')}` }
+		}
+		const outcome = applyChange((settingsFile) => mergeInto(settingsFile, patch))
+		return outcome.ok ? { ok: true, level: id } : outcome
 	}
 
 	/** Provider/model catalog for the settings page, cached briefly. */
@@ -926,6 +968,8 @@ export function createRuntime(ctx, config) {
 	function configView() {
 		return {
 			settings: editableSettings(),
+			level: detectLevel(settings),
+			levels: LEVELS.map((level) => ({ id: level.id, title: level.title, description: level.description })),
 			routes: {
 				actor: routesFor(undefined, 'actor').map((route) => `${route.provider}/${route.model}`),
 				examiner: routesFor(undefined, 'examiner').map((route) => `${route.provider}/${route.model}`),
@@ -974,6 +1018,7 @@ export function createRuntime(ctx, config) {
 		snapshot,
 		editableSettings,
 		applyEditablePatch,
+		applyLevel,
 		availableModels,
 		probeVoice,
 		configView,

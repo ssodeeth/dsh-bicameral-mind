@@ -554,7 +554,7 @@ describe('diagnostics route', () => {
 		}
 		const { ctx } = createFakeCtx({ webServer })
 		apply(ctx, { enabled: true })
-		assert.equal(routes.length, 5)
+		assert.equal(routes.length, 6)
 		const stateRoute = routes.find((route) => route.path === '/bicameral-mind/state')
 		const toggleRoute = routes.find((route) => route.path === '/bicameral-mind/toggle')
 
@@ -605,6 +605,7 @@ describe('diagnostics route', () => {
 		const configRoute = routes.find((route) => route.path === '/bicameral-mind/config')
 		const modelsRoute = routes.find((route) => route.path === '/bicameral-mind/models')
 		const probeRoute = routes.find((route) => route.path === '/bicameral-mind/probe')
+		const levelRoute = routes.find((route) => route.path === '/bicameral-mind/level')
 		const sameOrigin = { host: '127.0.0.1:46843', 'sec-fetch-site': 'same-origin' }
 
 		const got = createRes()
@@ -676,6 +677,33 @@ describe('diagnostics route', () => {
 		assert.equal(probed.statusCode, 200)
 		assert.equal(JSON.parse(probed.body).ok, true)
 
+		const leveled = createRes()
+		const levelRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/level',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ level: 'strict' }))
+			},
+		}
+		await levelRoute.handler(levelRequest, leveled)
+		assert.equal(leveled.statusCode, 200)
+		const levelView = JSON.parse(leveled.body)
+		assert.equal(levelView.level, 'strict')
+		assert.deepEqual(levelView.levels.map((level) => level.id), ['off', 'advisory', 'balanced', 'strict', 'paranoid'])
+
+		const badLevel = createRes()
+		const badLevelRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/level',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ level: 'nope' }))
+			},
+		}
+		await levelRoute.handler(badLevelRequest, badLevel)
+		assert.equal(badLevel.statusCode, 400)
+
 		// reset persisted settings so later tests see the defaults again
 		const reset = createRes()
 		const resetRequest = {
@@ -695,6 +723,19 @@ describe('diagnostics route', () => {
 		}
 		await configRoute.handler(resetRequest, reset)
 		assert.equal(reset.statusCode, 200)
+
+		// leave the shared settings file on the default level for later tests
+		const rebalanced = createRes()
+		const rebalancedRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/level',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ level: 'balanced' }))
+			},
+		}
+		await levelRoute.handler(rebalancedRequest, rebalanced)
+		assert.equal(rebalanced.statusCode, 200)
 	})
 })
 
@@ -728,6 +769,155 @@ describe('commands', () => {
 		const answer = await command.handler({ agent: createFakeAgent(), rawInput: 'nope' })
 		assert.equal(answer.kind, 'error')
 		assert.ok(answer.text.includes('/bicameral status'))
+	})
+})
+
+describe('intervention levels', () => {
+	test('each preset expands into its differentiated knobs', () => {
+		const { ctx } = createFakeCtx()
+		const runtime = createRuntime(ctx, {})
+
+		assert.ok(runtime.applyLevel('balanced').ok)
+		assert.equal(runtime.configView().level, 'balanced')
+		let cfg = runtime.current()
+		assert.equal(cfg.enabled, true)
+		assert.equal(cfg.autoReview.enabled, true)
+		assert.equal(cfg.autoReview.tools.includes('*'), false)
+		assert.equal(cfg.autoReview.finishAlways, false)
+
+		assert.ok(runtime.applyLevel('strict').ok)
+		assert.equal(runtime.configView().level, 'strict')
+		cfg = runtime.current()
+		assert.equal(cfg.autoReview.tools.includes('*'), true)
+		assert.equal(cfg.autoReview.finishAlways, true)
+		assert.equal(cfg.autoReview.cooldownMs, 8000)
+		assert.equal(cfg.autoReview.maxPerTurn, 12)
+		assert.equal(cfg.maxIssues, 4)
+		assert.ok(cfg.tool.fullStages.includes('checkpoint'))
+
+		assert.ok(runtime.applyLevel('paranoid').ok)
+		assert.equal(runtime.configView().level, 'paranoid')
+		cfg = runtime.current()
+		assert.equal(cfg.autoReview.shellReadGuard, false)
+		assert.equal(cfg.autoReview.cooldownMs, 0)
+		assert.equal(cfg.autoReview.maxPerTurn, 50)
+		assert.equal(cfg.tool.defaultDepth, 'full')
+		assert.equal(cfg.maxIssues, 5)
+
+		assert.ok(runtime.applyLevel('advisory').ok)
+		cfg = runtime.current()
+		assert.equal(cfg.enabled, true)
+		assert.equal(cfg.autoReview.enabled, false)
+		assert.equal(cfg.autoReview.finishGate, false)
+
+		assert.ok(runtime.applyLevel('off').ok)
+		assert.equal(runtime.current().enabled, false)
+		assert.equal(runtime.configView().level, 'off')
+
+		assert.equal(runtime.applyLevel('nope').ok, false)
+		runtime.applyLevel('balanced')
+	})
+
+	test('hand-tuned settings fall back to custom', () => {
+		const { ctx } = createFakeCtx()
+		const runtime = createRuntime(ctx, {})
+		runtime.applyLevel('strict')
+		assert.equal(runtime.configView().level, 'strict')
+		assert.ok(runtime.applyEditablePatch({ autoReview: { cooldownMs: 12345 } }).ok)
+		assert.equal(runtime.configView().level, 'custom')
+		runtime.applyLevel('balanced')
+	})
+
+	test('strict wildcard reviews tools outside the balanced list', async () => {
+		const { ctx, records } = createFakeCtx({
+			replies: () => '{"verdict":"revise","summary":"偏题","issues":[{"severity":"must","problem":"p","evidence":"e","fix":"f"}],"questions":[]}',
+		})
+		const runtime = createRuntime(ctx, {})
+		runtime.applyLevel('strict')
+		const agent = createFakeAgent()
+		const next = async () => ({ kind: 'enter', messages: [] })
+		await runtime.handlePreStep(
+			{ agent, messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: '任务' }], source: { kind: 'user' } }], turn: 1, step: 1, signal: new AbortController().signal },
+			next,
+		)
+		runtime.onToolResult({ name: 'read', agent, arguments: { path: 'x' } }, { isError: false, content: [{ type: 'text', text: 'ok' }] })
+		const decision = await runtime.handlePreStep({ agent, messages: [], turn: 1, step: 2, signal: new AbortController().signal }, next)
+		assert.equal(records.llmCalls.length, 1)
+		assert.equal(decision.messages.length, 1)
+		assert.ok(decision.messages[0].content[0].text.startsWith('〔右脑·校正〕'))
+		runtime.applyLevel('balanced')
+	})
+
+	test('balanced does not review tools outside its list', async () => {
+		const { ctx, records } = createFakeCtx({ replies: () => '{"verdict":"pass","summary":"ok","issues":[],"questions":[]}' })
+		const runtime = createRuntime(ctx, {})
+		runtime.applyLevel('balanced')
+		const agent = createFakeAgent()
+		const next = async () => ({ kind: 'enter', messages: [] })
+		await runtime.handlePreStep(
+			{ agent, messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: '任务' }], source: { kind: 'user' } }], turn: 1, step: 1, signal: new AbortController().signal },
+			next,
+		)
+		runtime.onToolResult({ name: 'read', agent, arguments: { path: 'x' } }, { isError: false, content: [{ type: 'text', text: 'ok' }] })
+		await runtime.handlePreStep({ agent, messages: [], turn: 1, step: 2, signal: new AbortController().signal }, next)
+		assert.equal(records.llmCalls.length, 0)
+	})
+
+	test('paranoid reviews read-only shell commands', async () => {
+		const { ctx, records } = createFakeCtx({
+			replies: () => '{"verdict":"revise","summary":"复核","issues":[{"severity":"should","problem":"p","evidence":"e","fix":"f"}],"questions":[]}',
+		})
+		const runtime = createRuntime(ctx, {})
+		runtime.applyLevel('paranoid')
+		const agent = createFakeAgent()
+		const next = async () => ({ kind: 'enter', messages: [] })
+		await runtime.handlePreStep(
+			{ agent, messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: '任务' }], source: { kind: 'user' } }], turn: 1, step: 1, signal: new AbortController().signal },
+			next,
+		)
+		runtime.onToolResult({ name: 'pwsh', agent, arguments: { command: 'Get-Content README.md' } }, { isError: false, content: [{ type: 'text', text: 'NONE' }] })
+		await runtime.handlePreStep({ agent, messages: [], turn: 1, step: 2, signal: new AbortController().signal }, next)
+		// paranoid reviews at full depth: critique + advocate reply + final verdict
+		assert.equal(records.llmCalls.length, 3)
+		runtime.applyLevel('balanced')
+	})
+
+	test('strict finishAlways reviews the final answer without pending issues', async () => {
+		const { ctx, records } = createFakeCtx({
+			replies: () => '{"verdict":"revise","summary":"还有未验证的断言","issues":[{"severity":"must","problem":"未验证","evidence":"回答","fix":"补验证"}],"questions":[]}',
+		})
+		const runtime = createRuntime(ctx, {})
+		runtime.applyLevel('strict')
+		const agent = createFakeAgent()
+		const next = async () => ({ kind: 'enter', messages: [] })
+		await runtime.handlePreStep(
+			{ agent, messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: '任务' }], source: { kind: 'user' } }], turn: 1, step: 1, signal: new AbortController().signal },
+			next,
+		)
+		await runtime.onTurnStopping({ agent, turn: 1, signal: new AbortController().signal })
+		assert.equal(records.llmCalls.length, 3)
+		assert.equal(agent.steered.length, 1)
+		await runtime.onTurnStopping({ agent, turn: 1, signal: new AbortController().signal })
+		assert.equal(agent.steered.length, 1)
+		runtime.applyLevel('balanced')
+	})
+
+	test('the level command lists and switches presets', async () => {
+		const { ctx } = createFakeCtx()
+		const runtime = createRuntime(ctx, {})
+		runtime.applyLevel('balanced')
+		const command = buildCommand(runtime)
+		const agent = createFakeAgent()
+		const listed = await command.handler({ agent, rawInput: 'level' })
+		assert.equal(listed.kind, 'success')
+		assert.ok(listed.text.includes('balanced'))
+		assert.ok(listed.text.includes('strict'))
+		const switched = await command.handler({ agent, rawInput: 'level paranoid' })
+		assert.equal(switched.kind, 'success')
+		assert.equal(runtime.configView().level, 'paranoid')
+		const bad = await command.handler({ agent, rawInput: 'level nope' })
+		assert.equal(bad.kind, 'error')
+		runtime.applyLevel('balanced')
 	})
 })
 

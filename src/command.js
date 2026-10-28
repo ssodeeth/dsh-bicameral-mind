@@ -8,12 +8,14 @@
  *
  * @module dsh-bicameral-mind/command
  */
+import { LEVELS } from './levels.js'
 import { str } from './util.js'
 
 const HELP = [
 	'用法：',
 	'  /bicameral status                          查看双声状态、两个模型路由、未决问题',
 	'  /bicameral last                            查看最近一次双声审议记录',
+	'  /bicameral level [off|advisory|balanced|strict|paranoid]  查看或切换介入程度',
 	'  /bicameral on | off                        启用/停用二分心智',
 	'  /bicameral auto on | off                   启用/停用自动插话（执行中右脑主动纠偏）',
 	'  /bicameral voice actor <provider> <model>  为左脑钉死模型（默认跟随会话）',
@@ -27,8 +29,8 @@ const HELP = [
 export function buildCommand(runtime) {
 	return {
 		name: 'bicameral',
-		description: '二分心智：查看/调整双声模型路由与自动纠偏',
-		input: { hint: '[status|last|on|off|auto on|off|voice <role> <provider> <model>|probe]' },
+		description: '二分心智：查看/调整双声模型路由、介入程度与自动纠偏',
+		input: { hint: '[status|last|level <name>|on|off|auto on|off|voice <role> <provider> <model>|probe]' },
 		async handler(invocation) {
 			const agent = invocation?.agent
 			const raw = typeof invocation?.rawInput === 'string' ? invocation.rawInput.trim() : ''
@@ -46,6 +48,18 @@ export function buildCommand(runtime) {
 				if (sub === 'help' || sub === '-h' || sub === '--help') return ok(HELP)
 				if (sub === 'status') return ok(runtime.statusText(agent))
 				if (sub === 'last') return ok(runtime.lastText(agent))
+				if (sub === 'level') {
+					const requested = (parts[1] ?? '').toLowerCase()
+					if (requested.length === 0) {
+						const current = runtime.configView().level
+						const lines = LEVELS.map((level) => `${level.id === current ? '▶' : ' '} ${level.id.padEnd(9)} ${level.title} — ${level.description}`)
+						return ok(`当前介入程度：${current}\n\n${lines.join('\n')}`)
+					}
+					const outcome = runtime.applyLevel(requested)
+					if (!outcome.ok) return bad(outcome.message ?? outcome.error ?? '档位切换失败')
+					const meta = LEVELS.find((level) => level.id === requested)
+					return ok(`介入程度已切换为「${meta ? meta.title : requested}」（${requested}）。`)
+				}
 				if (sub === 'on' || sub === 'off') {
 					const enabled = sub === 'on'
 					const failure = persist((settings) => {
