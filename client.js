@@ -109,6 +109,30 @@ window.__ModuleLoader__.load({
 				"set.levelCustom": "当前参数为自定义，不符合任何预设。",
 				"set.levelApplying": "正在应用…",
 				"set.levelSwitched": "已切换到「{title}」",
+				"set.budgetTitle": "成本护栏",
+				"set.budgetHint": "限制每轮模型调用、完整辩论与 token 估算；达到上限后本轮不再自动审议，显式 bicameral 调用会返回预算提示。",
+				"set.budgetEnabled": "启用成本护栏",
+				"set.budgetEnabledHint": "关闭后不做任何成本限制。",
+				"set.budgetCalls": "每轮调用上限",
+				"set.budgetCallsHint": "完整辩论记 3 次调用",
+				"set.budgetFull": "完整辩论上限",
+				"set.budgetTokens": "token 估算上限",
+				"set.budgetCallsUnit": "次",
+				"set.budgetFullUnit": "次",
+				"set.budgetTokensUnit": "tokens",
+				"set.budgetCustom": "当前为自定义数值",
+				"set.budgetOff": "成本护栏已关闭（不限制）",
+				"set.budgetApplying": "正在应用…",
+				"set.budgetSwitched": "已切换到「{title}」",
+				"set.budgetTierRelaxed": "宽松",
+				"set.budgetTierStandard": "标准",
+				"set.budgetTierFrugal": "节约",
+				"set.budget.relaxed.title": "宽松",
+				"set.budget.relaxed.desc": "每轮最多 30 次调用、8 次完整辩论、约 60k tokens；适合长任务。",
+				"set.budget.standard.title": "标准",
+				"set.budget.standard.desc": "每轮最多 12 次调用、3 次完整辩论、约 24k tokens（默认）。",
+				"set.budget.frugal.title": "节约",
+				"set.budget.frugal.desc": "每轮最多 6 次调用、1 次完整辩论、约 12k tokens；成本优先。",
 				"set.level.off.title": "关闭",
 				"set.level.off.desc": "完全不介入：协议与工具均不可用，不做任何自动复审。",
 				"set.level.advisory.title": "提示",
@@ -149,7 +173,7 @@ window.__ModuleLoader__.load({
 				"set.autoHint": "右脑在有后果的动作后主动校正。",
 				"set.autoEnabled": "启用自动插话",
 				"set.tools": "监视工具（逗号分隔）",
-				"set.toolsHint": "只有这些工具的结果会触发自动审议。",
+				"set.toolsHint": "只有这些工具的结果会触发自动审议；* 表示全部工具。",
 				"set.cooldown": "冷却（毫秒）",
 				"set.maxPerTurn": "每轮上限",
 				"set.timeout": "单次超时（毫秒）",
@@ -233,6 +257,30 @@ window.__ModuleLoader__.load({
 				"set.levelCustom": "The current parameters are custom and match no preset.",
 				"set.levelApplying": "Applying…",
 				"set.levelSwitched": "Switched to “{title}”",
+				"set.budgetTitle": "Cost guard",
+				"set.budgetHint": "Caps per-turn model calls, full debates and token estimates; once a cap is hit the rest of the turn skips automatic review, and an explicit bicameral call returns a budget notice.",
+				"set.budgetEnabled": "Enable cost guard",
+				"set.budgetEnabledHint": "When off, no cost limits are applied.",
+				"set.budgetCalls": "Calls per turn",
+				"set.budgetCallsHint": "A full debate counts as 3 calls",
+				"set.budgetFull": "Full debates per turn",
+				"set.budgetTokens": "Token estimate limit",
+				"set.budgetCallsUnit": "calls",
+				"set.budgetFullUnit": "debates",
+				"set.budgetTokensUnit": "tokens",
+				"set.budgetCustom": "Custom values are active",
+				"set.budgetOff": "Cost guard is off (no limits)",
+				"set.budgetApplying": "Applying…",
+				"set.budgetSwitched": "Switched to “{title}”",
+				"set.budgetTierRelaxed": "Relaxed",
+				"set.budgetTierStandard": "Standard",
+				"set.budgetTierFrugal": "Frugal",
+				"set.budget.relaxed.title": "Relaxed",
+				"set.budget.relaxed.desc": "Up to 30 calls, 8 full debates and about 60k tokens per turn; for long tasks.",
+				"set.budget.standard.title": "Standard",
+				"set.budget.standard.desc": "Up to 12 calls, 3 full debates and about 24k tokens per turn (default).",
+				"set.budget.frugal.title": "Frugal",
+				"set.budget.frugal.desc": "Up to 6 calls, 1 full debate and about 12k tokens per turn; cost first.",
 				"set.level.off.title": "Off",
 				"set.level.off.desc": "No protocol, no usable tool, no automatic review.",
 				"set.level.advisory.title": "Advisory",
@@ -273,7 +321,7 @@ window.__ModuleLoader__.load({
 				"set.autoHint": "The right brain corrects after consequential actions.",
 				"set.autoEnabled": "Enable automatic interjection",
 				"set.tools": "Watched tools (comma separated)",
-				"set.toolsHint": "Only these tools' results trigger an automatic review.",
+				"set.toolsHint": "Only these tools' results trigger an automatic review; * means all tools.",
 				"set.cooldown": "Cooldown (ms)",
 				"set.maxPerTurn": "Per-turn limit",
 				"set.timeout": "Per review timeout (ms)",
@@ -336,6 +384,13 @@ window.__ModuleLoader__.load({
 			{ key: "maxTokens", labelKey: "set.maxTokens", min: 200, max: 4000, unit: "tok" },
 		];
 
+		/** Cost-guard numeric bounds, mirroring the Host's budget validation. */
+		const BUDGET_FIELDS = [
+			{ key: "maxCallsPerTurn", labelKey: "set.budgetCalls", unitKey: "set.budgetCallsUnit", min: 1, max: 1000 },
+			{ key: "maxFullDebatesPerTurn", labelKey: "set.budgetFull", unitKey: "set.budgetFullUnit", min: 0, max: 200 },
+			{ key: "maxTokensPerTurn", labelKey: "set.budgetTokens", unitKey: "set.budgetTokensUnit", min: 1000, max: 2000000 },
+		];
+
 		/**
 		 * Form seed used when `GET /config` is unreachable: the same defaults the
 		 * Host normalizes to, so the fields stay editable and savable.
@@ -363,6 +418,7 @@ window.__ModuleLoader__.load({
 					shellReadGuard: true,
 				},
 				tool: { defaultDepth: "quick", fullStages: ["plan", "finish"] },
+				budget: { enabled: true, maxCallsPerTurn: 12, maxFullDebatesPerTurn: 3, maxTokensPerTurn: 24000 },
 			};
 		}
 
@@ -1350,6 +1406,15 @@ window.__ModuleLoader__.load({
   font-size: 11px;
   line-height: 15px;
 }
+.bcm-set-budgetOff {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 15px;
+}
+.bcm-set-budgetGrid .bcm-set-inputWrap .bcm-set-input {
+  padding-right: 56px;
+}
 `;
 
 		/** `HH:MM` in the viewer's local zone, tolerant of missing/forged data. */
@@ -1457,6 +1522,7 @@ window.__ModuleLoader__.load({
 			const voices = source.voices !== null && typeof source.voices === "object" ? source.voices : fallback.voices;
 			const auto = source.autoReview !== null && typeof source.autoReview === "object" ? source.autoReview : fallback.autoReview;
 			const tool = source.tool !== null && typeof source.tool === "object" ? source.tool : fallback.tool;
+			const budget = source.budget !== null && typeof source.budget === "object" ? source.budget : fallback.budget;
 			const role = (name) => {
 				const voice = voices[name] !== null && typeof voices[name] === "object" ? voices[name] : {};
 				const candidates = Array.isArray(voice.candidates)
@@ -1489,6 +1555,12 @@ window.__ModuleLoader__.load({
 					defaultDepth: tool.defaultDepth === "full" ? "full" : "quick",
 					fullStages,
 				},
+				budget: {
+					enabled: budget.enabled !== false,
+					maxCallsPerTurn: String(Number.isSafeInteger(budget.maxCallsPerTurn) ? budget.maxCallsPerTurn : fallback.budget.maxCallsPerTurn),
+					maxFullDebatesPerTurn: String(Number.isSafeInteger(budget.maxFullDebatesPerTurn) ? budget.maxFullDebatesPerTurn : fallback.budget.maxFullDebatesPerTurn),
+					maxTokensPerTurn: String(Number.isSafeInteger(budget.maxTokensPerTurn) ? budget.maxTokensPerTurn : fallback.budget.maxTokensPerTurn),
+				},
 			};
 		}
 
@@ -1496,6 +1568,17 @@ window.__ModuleLoader__.load({
 		function entryKey(entry) {
 			const at = typeof entry.at === "number" ? entry.at : 0;
 			return `${at}:${asText(entry.stage)}:${asText(entry.verdict)}:${asText(entry.toolName)}:${asText(entry.summary).slice(0, 32)}`;
+		}
+
+		/** Localized fallback title for a cost-guard preset without Host copy. */
+		function fallbackBudgetTierTitle(tier, tx) {
+			const keys = {
+				relaxed: "set.budgetTierRelaxed",
+				standard: "set.budgetTierStandard",
+				frugal: "set.budgetTierFrugal",
+			};
+			const key = keys[tier];
+			return key === undefined ? tier : tx(key);
 		}
 
 		/**
@@ -2287,6 +2370,8 @@ window.__ModuleLoader__.load({
 			const candidateRefs = React.useRef([]);
 			const [levelBusy, setLevelBusy] = React.useState(false);
 			const [levelError, setLevelError] = React.useState("");
+			const [budgetBusy, setBudgetBusy] = React.useState(false);
+			const [budgetError, setBudgetError] = React.useState("");
 
 			/** Translate through the locale service, falling back to built-in copy. */
 			const tx = React.useCallback((key, params) => {
@@ -2334,6 +2419,7 @@ window.__ModuleLoader__.load({
 						setDraft(draftFromSettings(payload.settings));
 						setConfigState("ready");
 						setLevelError("");
+						setBudgetError("");
 					} catch {
 						if (disposed) return;
 						setConfigState("failed");
@@ -2416,6 +2502,14 @@ window.__ModuleLoader__.load({
 				: [];
 			const currentLevel = view !== null && typeof view.level === "string" ? view.level : "custom";
 			const levelCustom = !levels.some((entry) => entry.id === currentLevel);
+			/** Cost-guard presets served by the Host, and the active tier. */
+			const budgetPresets = view !== null && Array.isArray(view.budgetPresets)
+				? view.budgetPresets.filter((entry) => entry !== null && typeof entry === "object" && typeof entry.id === "string" && entry.id.length > 0)
+				: [];
+			const budgetTier = view !== null && typeof view.budgetTier === "string" ? view.budgetTier : "custom";
+			const budgetKnown = budgetPresets.some((entry) => entry.id === budgetTier);
+			const budgetOff = budgetTier === "off";
+			const budgetCustom = budgetTier === "custom" || (!budgetKnown && !budgetOff);
 			/** Whether the catalog can offer at least one complete route. */
 			const hasCatalogRoute = providers.some((entry) => entry !== null && typeof entry === "object"
 				&& Array.isArray(entry.models)
@@ -2716,6 +2810,28 @@ window.__ModuleLoader__.load({
 				}
 				if (Object.keys(autoPatch).length > 0) patch.autoReview = autoPatch;
 
+				const fallbackBudget = fallback.budget;
+				const beforeBudget = baseline.budget !== null && typeof baseline.budget === "object" ? baseline.budget : fallbackBudget;
+				const budgetDraft = draft.budget !== null && typeof draft.budget === "object" ? draft.budget : null;
+				if (budgetDraft !== null) {
+					const budgetPatch = {};
+					if (budgetDraft.enabled !== (beforeBudget.enabled !== false)) budgetPatch.enabled = budgetDraft.enabled;
+					for (const spec of BUDGET_FIELDS) {
+						const raw = String(budgetDraft[spec.key] ?? "").trim();
+						const number = Number(raw);
+						if (raw.length === 0 || !Number.isFinite(number)) {
+							errors.push(tx("set.numberError", { field: tx(spec.labelKey) }));
+							continue;
+						}
+						if (!Number.isInteger(number) || number < spec.min || number > spec.max) {
+							errors.push(tx("set.rangeError", { field: tx(spec.labelKey), min: spec.min, max: spec.max }));
+							continue;
+						}
+						if (number !== beforeBudget[spec.key]) budgetPatch[spec.key] = number;
+					}
+					if (Object.keys(budgetPatch).length > 0) patch.budget = budgetPatch;
+				}
+
 				const beforeTool = baseline.tool !== null && typeof baseline.tool === "object" ? baseline.tool : fallback.tool;
 				const toolPatch = {};
 				const awaitedDepth = beforeTool.defaultDepth === "full" ? "full" : "quick";
@@ -2798,6 +2914,7 @@ window.__ModuleLoader__.load({
 					setView(payload);
 					setDraft(draftFromSettings(payload.settings));
 					setConfigState("ready");
+					setBudgetError("");
 					setStatus({ kind: "saved", message: tx("set.levelSwitched", { title }) });
 				} catch (reason) {
 					const message = reason instanceof Error && reason.message.length > 0 ? reason.message : String(reason);
@@ -2806,6 +2923,52 @@ window.__ModuleLoader__.load({
 					setLevelBusy(false);
 				}
 			};
+
+			/**
+			 * Apply one cost-guard preset. Like the intervention level, the Host
+			 * answers with the whole config view and any unsaved draft is dropped.
+			 */
+			const applyBudget = async (tier) => {
+				if (budgetBusy || saving || draft === null) return;
+				setBudgetBusy(true);
+				setBudgetError("");
+				try {
+					const response = await fetch("/bicameral-mind/budget", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ tier }),
+					});
+					const payload = await readJsonResponse(response);
+					if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true) {
+						const message = payload !== null && typeof payload === "object" && typeof payload.message === "string" && payload.message.length > 0
+							? payload.message
+							: `HTTP ${response.status}`;
+						throw new Error(message);
+					}
+					const applied = typeof payload.budgetTier === "string" ? payload.budgetTier : tier;
+					const preset = Array.isArray(payload.budgetPresets)
+						? payload.budgetPresets.find((entry) => entry !== null && typeof entry === "object" && entry.id === applied)
+						: undefined;
+					const title = preset !== undefined && typeof preset.title === "string" && preset.title.length > 0
+						? preset.title
+						: fallbackBudgetTierTitle(applied, tx);
+					setView(payload);
+					setDraft(draftFromSettings(payload.settings));
+					setConfigState("ready");
+					setLevelError("");
+					setStatus({ kind: "saved", message: tx("set.budgetSwitched", { title }) });
+				} catch (reason) {
+					const message = reason instanceof Error && reason.message.length > 0 ? reason.message : String(reason);
+					setBudgetError(message);
+				} finally {
+					setBudgetBusy(false);
+				}
+			};
+
+			const setBudget = (key, value) => patchDraft((previous) => ({
+				...previous,
+				budget: { ...previous.budget, [key]: value },
+			}));
 
 			const renderSwitch = (checked, onChange, labelText, disabled) => h("button", {
 				type: "button",
@@ -3249,6 +3412,87 @@ window.__ModuleLoader__.load({
 				renderSwitchRow(tx("set.subagents"), tx("set.subagentsHint"), draft.autoReview.subagents, (value) => setAuto("subagents", value)),
 			);
 
+			const budgetCard = budgetPresets.length === 0
+				? null
+				: h(
+					"section",
+					{ className: "bcm-set-card" },
+					h("h3", { className: "bcm-set-cardTitle" }, tx("set.budgetTitle")),
+					h("p", { className: "bcm-set-cardDesc", title: tx("set.budgetHint") }, tx("set.budgetHint")),
+					h(
+						"div",
+						{ className: "bcm-set-levels", role: "radiogroup", "aria-label": tx("set.budgetTitle") },
+						budgetPresets.map((entry) => {
+							const id = entry.id;
+							const active = !budgetOff && !budgetCustom && budgetTier === id;
+							const titleKey = "set.budget." + id + ".title";
+							const descKey = "set.budget." + id + ".desc";
+							const hasTitle = Object.prototype.hasOwnProperty.call(FALLBACK, titleKey);
+							const hasDesc = Object.prototype.hasOwnProperty.call(FALLBACK, descKey);
+							const description = hasDesc
+								? tx(descKey)
+								: (typeof entry.description === "string" ? entry.description : "");
+							const title = hasTitle
+								? tx(titleKey)
+								: (typeof entry.title === "string" && entry.title.length > 0 ? entry.title : fallbackBudgetTierTitle(id, tx));
+							return h(
+								"button",
+								{
+									type: "button",
+									className: "bcm-set-level",
+									key: id,
+									role: "radio",
+									"aria-checked": active ? "true" : "false",
+									"data-tier": id,
+									title: description,
+									disabled: budgetBusy || saving,
+									onClick: () => applyBudget(id),
+								},
+								h(
+									"span",
+									{ className: "bcm-set-levelText" },
+									h("span", { className: "bcm-set-levelTitle" }, title),
+									description.length === 0 ? null : h("span", { className: "bcm-set-levelDesc" }, description),
+								),
+								h("span", { className: "bcm-set-levelMark", "aria-hidden": true }, active ? "\u2713" : ""),
+							);
+						}),
+					),
+					budgetCustom ? h("p", { className: "bcm-set-levelCustom" }, tx("set.budgetCustom")) : null,
+					budgetOff ? h("p", { className: "bcm-set-budgetOff" }, tx("set.budgetOff")) : null,
+					renderSwitchRow(tx("set.budgetEnabled"), tx("set.budgetEnabledHint"), draft.budget.enabled, (value) => setBudget("enabled", value)),
+					h(
+						"div",
+						{ className: "bcm-set-subgrid bcm-set-budgetGrid" },
+						BUDGET_FIELDS.map((spec) => {
+							const fieldHint = spec.key === "maxCallsPerTurn" ? ` · ${tx("set.budgetCallsHint")}` : "";
+							return h(
+								"label",
+								{ className: "bcm-set-field", key: spec.key, title: `${tx(spec.labelKey)}${fieldHint}` },
+								h("span", { className: "bcm-set-label" }, tx(spec.labelKey)),
+								h(
+									"span",
+									{ className: "bcm-set-inputWrap" },
+									h("input", {
+										type: "number",
+										className: "bcm-set-input",
+										min: spec.min,
+										max: spec.max,
+										step: 1,
+										value: draft.budget[spec.key],
+										"aria-label": tx(spec.labelKey),
+										disabled: budgetBusy || saving || draft.budget.enabled !== true,
+										onChange: (event) => setBudget(spec.key, event.target.value),
+									}),
+									h("span", { className: "bcm-set-unit", "aria-hidden": true }, tx(spec.unitKey)),
+								),
+							);
+						}),
+					),
+					budgetError.length > 0 ? h("p", { className: "bcm-set-levelError", role: "status" }, budgetError) : null,
+					budgetBusy ? h("p", { className: "bcm-set-levelBusy", role: "status" }, tx("set.budgetApplying")) : null,
+				);
+
 			const reviewCard = h(
 				"section",
 				{ className: "bcm-set-card" },
@@ -3356,6 +3600,7 @@ window.__ModuleLoader__.load({
 					examinerCard,
 					actorCard,
 					autoCard,
+					budgetCard,
 					reviewCard,
 					footer,
 				),

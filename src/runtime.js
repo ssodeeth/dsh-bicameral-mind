@@ -43,6 +43,11 @@ import {
 	presetPatch,
 	REVIEW_ALL,
 } from './levels.js'
+import {
+	BUDGET_PRESETS,
+	budgetPresetPatch,
+	detectBudgetTier,
+} from './budget.js'
 import { promptText } from './prompt.js'
 import { BicameralStore } from './state.js'
 import {
@@ -217,6 +222,61 @@ export function createRuntime(ctx, config) {
 		}
 	}
 
+	/** Reset the per-turn cost counters when the turn advances. */
+	function resetBudgetTurn(state) {
+		if (state.budgetTurn === state.turn) return
+		state.budgetTurn = state.turn
+		state.budgetCalls = 0
+		state.budgetFull = 0
+		state.budgetTokens = 0
+		state.budgetSkipped = 0
+	}
+
+	/**
+	 * Reserve one review's estimated cost before any model call. A full debate is
+	 * counted as three calls; the token estimate is conservative (maxTokens per
+	 * call), so the limit is never silently exceeded.
+	 */
+	function reserveReviewBudget(sessionId, depth, tokensPerCall) {
+		const cfg = settings
+		if (!cfg.budget.enabled) return { ok: true }
+		const state = sessionId === undefined ? undefined : store.peek(sessionId)
+		if (state === undefined) return { ok: true }
+		resetBudgetTurn(state)
+		const calls = depth === 'full' ? 3 : 1
+		const tokens = Math.max(1, tokensPerCall) * calls
+		if (state.budgetCalls + calls > cfg.budget.maxCallsPerTurn) {
+			return { ok: false, reason: `本轮审议调用预算已用完（上限 ${cfg.budget.maxCallsPerTurn} 次；一次完整辩论记 3 次）` }
+		}
+		if (depth === 'full' && state.budgetFull + 1 > cfg.budget.maxFullDebatesPerTurn) {
+			return { ok: false, reason: `本轮完整辩论预算已用完（上限 ${cfg.budget.maxFullDebatesPerTurn} 次）` }
+		}
+		if (state.budgetTokens + tokens > cfg.budget.maxTokensPerTurn) {
+			return { ok: false, reason: `本轮 token 预算已用完（估算上限 ${cfg.budget.maxTokensPerTurn}）` }
+		}
+		state.budgetCalls += calls
+		state.budgetFull += depth === 'full' ? 1 : 0
+		state.budgetTokens += tokens
+		return { ok: true }
+	}
+
+	/** Human-readable cost guardrail state, including this turn's usage. */
+	function budgetText(agent) {
+		const cfg = settings
+		const tier = detectBudgetTier(cfg.budget)
+		const meta = BUDGET_PRESETS.find((preset) => preset.id === tier)
+		const lines = [`成本护栏：${cfg.budget.enabled ? `开（${meta ? meta.title : '自定义'}）` : '关'}`]
+		if (cfg.budget.enabled) {
+			lines.push(`  每轮：≤ ${cfg.budget.maxCallsPerTurn} 次调用（完整辩论记 3 次） / ≤ ${cfg.budget.maxFullDebatesPerTurn} 次完整辩论 / ≈${cfg.budget.maxTokensPerTurn} tokens`)
+		}
+		const state = agent?.id === undefined ? undefined : store.peek(agent.id)
+		if (state !== undefined) {
+			resetBudgetTurn(state)
+			lines.push(`  本轮已用：${state.budgetCalls} 次调用 / ${state.budgetFull} 次完整辩论 / ≈${state.budgetTokens} tokens${state.budgetSkipped > 0 ? `（拦截 ${state.budgetSkipped} 次）` : ''}`)
+		}
+		return lines.join('\n')
+	}
+
 	/**
 	 * Run one full review.
 	 *
@@ -249,6 +309,14 @@ export function createRuntime(ctx, config) {
 			return unavailable('同一会话已有一次审议在进行', depth, stage)
 		}
 		if (!cfg.enabled) return unavailable('二分心智当前已关闭（/bicameral on 可开启）', depth, stage)
+		const estimateTokens = Number.isSafeInteger(params.maxTokens) && params.maxTokens > 0
+			? params.maxTokens
+			: (depth === 'full' ? cfg.voices.examiner.maxTokensFull : cfg.voices.examiner.maxTokensQuick)
+		const budget = reserveReviewBudget(sessionId, depth, estimateTokens)
+		if (!budget.ok) {
+			if (state !== undefined) state.budgetSkipped += 1
+			return unavailable(budget.reason, depth, stage)
+		}
 
 		const examinerRoutes = preferLastGood(routesFor(params.agent, 'examiner'))
 		const actorRoutes = routesFor(params.agent, 'actor')
@@ -659,6 +727,7 @@ export function createRuntime(ctx, config) {
 			`左脑模型：${describeVoice(agent, 'actor')}（默认跟随会话路由）`,
 			`右脑模型：${describeVoice(agent, 'examiner')}${cfg.voices.examiner.provider && cfg.voices.examiner.model ? '（已钉死）' : '（默认跟随会话路由，可用 /bicameral voice examiner <provider> <model> 指定不同模型）'}`,
 			`自动插话：${cfg.autoReview.enabled ? '开' : '关'}，监视 ${cfg.autoReview.tools.includes(REVIEW_ALL) ? '全部工具' : cfg.autoReview.tools.join('/') || '（空）'}，冷却 ${cfg.autoReview.cooldownMs}ms，每轮上限 ${cfg.autoReview.maxPerTurn}`,
+			budgetText(agent),
 			`收尾闸门：${cfg.autoReview.finishGate ? (cfg.autoReview.finishAlways ? '开（每轮必审）' : '开（仅未决问题）') : '关'}；默认审议深度：${cfg.tool.defaultDepth}（完整审议阶段：${cfg.tool.fullStages.join('/') || '无'}）`,
 		]
 		if (state !== undefined) {
@@ -795,6 +864,12 @@ export function createRuntime(ctx, config) {
 				shellReadGuard: cfg.autoReview.shellReadGuard,
 			},
 			tool: { defaultDepth: cfg.tool.defaultDepth, fullStages: [...cfg.tool.fullStages] },
+			budget: {
+				enabled: cfg.budget.enabled,
+				maxCallsPerTurn: cfg.budget.maxCallsPerTurn,
+				maxFullDebatesPerTurn: cfg.budget.maxFullDebatesPerTurn,
+				maxTokensPerTurn: cfg.budget.maxTokensPerTurn,
+			},
 		}
 	}
 
@@ -904,6 +979,25 @@ export function createRuntime(ctx, config) {
 				next.tool = value
 			}
 		}
+		if (patch.budget !== undefined) {
+			const raw = patch.budget
+			if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+				errors.push('budget 必须是对象')
+			} else {
+				const value = {}
+				if ('enabled' in raw) {
+					if (typeof raw.enabled !== 'boolean') errors.push('budget.enabled 必须是布尔值')
+					else value.enabled = raw.enabled
+				}
+				for (const [key, min, max] of [['maxCallsPerTurn', 1, 1000], ['maxFullDebatesPerTurn', 0, 200], ['maxTokensPerTurn', 1000, 2000000]]) {
+					if (!(key in raw)) continue
+					const number = readInt(raw[key], min, max)
+					if (number === undefined) errors.push(`budget.${key} 必须在 ${min}..${max} 之间`)
+					else value[key] = number
+				}
+				next.budget = value
+			}
+		}
 		if (errors.length > 0) return { ok: false, message: errors.join('；') }
 		const outcome = applyChange((settingsFile) => mergeInto(settingsFile, next))
 		return outcome.ok ? { ok: true } : outcome
@@ -921,6 +1015,20 @@ export function createRuntime(ctx, config) {
 		}
 		const outcome = applyChange((settingsFile) => mergeInto(settingsFile, patch))
 		return outcome.ok ? { ok: true, level: id } : outcome
+	}
+
+	/**
+	 * Apply one cost-guardrail preset (relaxed / standard / frugal), persisted to
+	 * the settings file. A custom numeric patch goes through applyEditablePatch.
+	 */
+	function applyBudgetPreset(tier) {
+		const id = typeof tier === 'string' ? tier.trim().toLowerCase() : ''
+		const patch = budgetPresetPatch(id)
+		if (patch === undefined) {
+			return { ok: false, message: `未知成本档位：${id || '（空）'}；可选 ${BUDGET_PRESETS.map((preset) => preset.id).join(' / ')}` }
+		}
+		const outcome = applyChange((settingsFile) => mergeInto(settingsFile, patch))
+		return outcome.ok ? { ok: true, tier: id } : outcome
 	}
 
 	/** Provider/model catalog for the settings page, cached briefly. */
@@ -971,6 +1079,8 @@ export function createRuntime(ctx, config) {
 			settings: editableSettings(),
 			level: detectLevel(settings),
 			levels: LEVELS.map((level) => ({ id: level.id, title: level.title, description: level.description })),
+			budgetTier: detectBudgetTier(settings.budget),
+			budgetPresets: BUDGET_PRESETS.map((preset) => ({ ...preset, values: { ...preset.values } })),
 			routes: {
 				actor: routesFor(undefined, 'actor').map((route) => `${route.provider}/${route.model}`),
 				examiner: routesFor(undefined, 'examiner').map((route) => `${route.provider}/${route.model}`),
@@ -980,7 +1090,10 @@ export function createRuntime(ctx, config) {
 	}
 
 	/** The diagnostics snapshot consumed by one session's Web panel. */
-	function snapshot(sessionId) {		return {
+	function snapshot(sessionId) {
+		const state = sessionId === undefined ? undefined : store.peek(sessionId)
+		if (state !== undefined) resetBudgetTurn(state)
+		return {
 			enabled: settings.enabled,
 			language: settings.language,
 			voices: {
@@ -999,6 +1112,13 @@ export function createRuntime(ctx, config) {
 				cooldownMs: settings.autoReview.cooldownMs,
 				maxPerTurn: settings.autoReview.maxPerTurn,
 				finishGate: settings.autoReview.finishGate,
+			},
+			budget: {
+				...settings.budget,
+				tier: detectBudgetTier(settings.budget),
+				usage: state === undefined
+					? undefined
+					: { calls: state.budgetCalls, full: state.budgetFull, tokens: state.budgetTokens, skipped: state.budgetSkipped },
 			},
 			...store.snapshot(sessionId),
 		}
@@ -1020,6 +1140,8 @@ export function createRuntime(ctx, config) {
 		editableSettings,
 		applyEditablePatch,
 		applyLevel,
+		applyBudgetPreset,
+		budgetText,
 		availableModels,
 		probeVoice,
 		configView,

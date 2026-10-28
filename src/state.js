@@ -77,6 +77,12 @@ function freshSession(sessionId) {
 		autoCount: 0,
 		autoTurn: -1,
 		lastAutoAt: 0,
+		/** Cost guardrail counters for the current turn. */
+		budgetTurn: -1,
+		budgetCalls: 0,
+		budgetFull: 0,
+		budgetTokens: 0,
+		budgetSkipped: 0,
 		/** Set while an examiner request is in flight for this session. */
 		reviewing: false,
 		/** Consequential action waiting for the next step boundary, if any. */

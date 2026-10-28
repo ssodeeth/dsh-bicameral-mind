@@ -554,7 +554,7 @@ describe('diagnostics route', () => {
 		}
 		const { ctx } = createFakeCtx({ webServer })
 		apply(ctx, { enabled: true })
-		assert.equal(routes.length, 6)
+		assert.equal(routes.length, 7)
 		const stateRoute = routes.find((route) => route.path === '/bicameral-mind/state')
 		const toggleRoute = routes.find((route) => route.path === '/bicameral-mind/toggle')
 
@@ -606,6 +606,7 @@ describe('diagnostics route', () => {
 		const modelsRoute = routes.find((route) => route.path === '/bicameral-mind/models')
 		const probeRoute = routes.find((route) => route.path === '/bicameral-mind/probe')
 		const levelRoute = routes.find((route) => route.path === '/bicameral-mind/level')
+		const budgetRoute = routes.find((route) => route.path === '/bicameral-mind/budget')
 		const sameOrigin = { host: '127.0.0.1:46843', 'sec-fetch-site': 'same-origin' }
 
 		const got = createRes()
@@ -704,6 +705,33 @@ describe('diagnostics route', () => {
 		await levelRoute.handler(badLevelRequest, badLevel)
 		assert.equal(badLevel.statusCode, 400)
 
+		const budgeted = createRes()
+		const budgetRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/budget',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ tier: 'frugal' }))
+			},
+		}
+		await budgetRoute.handler(budgetRequest, budgeted)
+		assert.equal(budgeted.statusCode, 200)
+		const budgetView = JSON.parse(budgeted.body)
+		assert.equal(budgetView.budgetTier, 'frugal')
+		assert.equal(budgetView.settings.budget.maxCallsPerTurn, 6)
+
+		const badBudget = createRes()
+		const badBudgetRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/budget',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ tier: 'nope' }))
+			},
+		}
+		await budgetRoute.handler(badBudgetRequest, badBudget)
+		assert.equal(badBudget.statusCode, 400)
+
 		// reset persisted settings so later tests see the defaults again
 		const reset = createRes()
 		const resetRequest = {
@@ -736,6 +764,18 @@ describe('diagnostics route', () => {
 		}
 		await levelRoute.handler(rebalancedRequest, rebalanced)
 		assert.equal(rebalanced.statusCode, 200)
+
+		const restoreBudget = createRes()
+		const restoreBudgetRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/budget',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ tier: 'standard' }))
+			},
+		}
+		await budgetRoute.handler(restoreBudgetRequest, restoreBudget)
+		assert.equal(restoreBudget.statusCode, 200)
 	})
 })
 
@@ -922,6 +962,95 @@ describe('intervention levels', () => {
 		const bad = await command.handler({ agent, rawInput: 'level nope' })
 		assert.equal(bad.kind, 'error')
 		runtime.applyLevel('balanced')
+	})
+})
+
+describe('cost guardrails', () => {
+	test('presets apply, detect frugal/standard and fall back to custom', () => {
+		const { ctx } = createFakeCtx()
+		const runtime = createRuntime(ctx, {})
+		assert.equal(runtime.configView().budgetTier, 'standard')
+		assert.ok(runtime.applyBudgetPreset('frugal').ok)
+		let view = runtime.configView()
+		assert.equal(view.budgetTier, 'frugal')
+		assert.equal(view.settings.budget.maxCallsPerTurn, 6)
+		assert.equal(view.settings.budget.maxFullDebatesPerTurn, 1)
+		assert.ok(runtime.applyBudgetPreset('relaxed').ok)
+		assert.equal(runtime.configView().budgetTier, 'relaxed')
+		assert.ok(runtime.applyEditablePatch({ budget: { maxCallsPerTurn: 8 } }).ok)
+		assert.equal(runtime.configView().budgetTier, 'custom')
+		assert.ok(runtime.applyBudgetPreset('standard').ok)
+		assert.equal(runtime.configView().budgetTier, 'standard')
+	})
+
+	test('per-turn call budget blocks further reviews, then resets on the next turn', async () => {
+		const { ctx, records } = createFakeCtx({
+			replies: () => '{"verdict":"pass","summary":"ok","issues":[],"questions":[]}',
+		})
+		const runtime = createRuntime(ctx, {})
+		assert.ok(
+			runtime.applyEditablePatch({
+				budget: { enabled: true, maxCallsPerTurn: 1, maxFullDebatesPerTurn: 10, maxTokensPerTurn: 1000000 },
+			}).ok,
+		)
+		const agent = createFakeAgent()
+		const next = async () => ({ kind: 'enter', messages: [] })
+		const signal = new AbortController().signal
+		await runtime.handlePreStep(
+			{ agent, messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: '任务' }], source: { kind: 'user' } }], turn: 1, step: 1, signal },
+			next,
+		)
+		const first = await runtime.review({ agent, stage: 'act', claim: 'c', evidence: 'e', depth: 'quick', origin: 'tool' })
+		assert.notEqual(first.verdict, 'unavailable')
+		const second = await runtime.review({ agent, stage: 'act', claim: 'c2', evidence: 'e2', depth: 'quick', origin: 'tool' })
+		assert.equal(second.verdict, 'unavailable')
+		assert.ok(second.summary.includes('调用预算'))
+		assert.equal(records.llmCalls.length, 1)
+
+		await runtime.handlePreStep({ agent, messages: [], turn: 2, step: 1, signal }, next)
+		const third = await runtime.review({ agent, stage: 'act', claim: 'c3', evidence: 'e3', depth: 'quick', origin: 'tool' })
+		assert.notEqual(third.verdict, 'unavailable')
+		assert.equal(records.llmCalls.length, 2)
+		runtime.applyBudgetPreset('standard')
+	})
+
+	test('full debates consume three calls and the full-debate quota', async () => {
+		const { ctx } = createFakeCtx({
+			replies: () => '{"verdict":"pass","summary":"ok","issues":[],"questions":[]}',
+		})
+		const runtime = createRuntime(ctx, {})
+		assert.ok(runtime.applyBudgetPreset('frugal').ok)
+		const agent = createFakeAgent()
+		const next = async () => ({ kind: 'enter', messages: [] })
+		const signal = new AbortController().signal
+		await runtime.handlePreStep(
+			{ agent, messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: '任务' }], source: { kind: 'user' } }], turn: 1, step: 1, signal },
+			next,
+		)
+		const first = await runtime.review({ agent, stage: 'finish', claim: 'c', evidence: 'e', depth: 'full', origin: 'tool' })
+		assert.notEqual(first.verdict, 'unavailable')
+		const second = await runtime.review({ agent, stage: 'finish', claim: 'c2', evidence: 'e2', depth: 'full', origin: 'tool' })
+		assert.equal(second.verdict, 'unavailable')
+		assert.ok(second.summary.includes('完整辩论'))
+		runtime.applyBudgetPreset('standard')
+	})
+
+	test('the budget command lists and switches presets', async () => {
+		const { ctx } = createFakeCtx()
+		const runtime = createRuntime(ctx, {})
+		runtime.applyBudgetPreset('standard')
+		const command = buildCommand(runtime)
+		const agent = createFakeAgent()
+		const listed = await command.handler({ agent, rawInput: 'budget' })
+		assert.equal(listed.kind, 'success')
+		assert.ok(listed.text.includes('standard'))
+		assert.ok(listed.text.includes('frugal'))
+		const switched = await command.handler({ agent, rawInput: 'budget frugal' })
+		assert.equal(switched.kind, 'success')
+		assert.equal(runtime.configView().budgetTier, 'frugal')
+		const bad = await command.handler({ agent, rawInput: 'budget nope' })
+		assert.equal(bad.kind, 'error')
+		runtime.applyBudgetPreset('standard')
 	})
 })
 

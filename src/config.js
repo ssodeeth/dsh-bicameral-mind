@@ -152,6 +152,7 @@ export function normalizeConfig(config, fileSettings = {}, overrides = {}) {
 	const rawExaminer = layered(base.voices?.examiner, file.voices?.examiner, live.voices?.examiner, base.voice?.examiner, base.voice)
 	const rawAuto = layered(base.autoReview, file.autoReview, live.autoReview)
 	const rawTool = layered(base.tool, file.tool, live.tool)
+	const rawBudget = layered(base.budget, file.budget, live.budget)
 
 	const enabled = [live.enabled, file.enabled, base.enabled].find((value) => typeof value === 'boolean')
 	const language = [live.language, file.language, base.language].find((value) => ['zh', 'en', 'auto'].includes(value)) ?? 'auto'
@@ -190,6 +191,12 @@ export function normalizeConfig(config, fileSettings = {}, overrides = {}) {
 			defaultDepth: rawTool.defaultDepth === 'full' ? 'full' : 'quick',
 			fullStages: strList(rawTool.fullStages, DEFAULT_FULL_STAGES),
 			timeoutMs: clampInt(rawTool.timeoutMs, 2000, 300000, 30000),
+		},
+		budget: {
+			enabled: rawBudget.enabled !== false,
+			maxCallsPerTurn: clampInt(rawBudget.maxCallsPerTurn, 1, 1000, 12),
+			maxFullDebatesPerTurn: clampInt(rawBudget.maxFullDebatesPerTurn, 0, 200, 3),
+			maxTokensPerTurn: clampInt(rawBudget.maxTokensPerTurn, 1000, 2000000, 24000),
 		},
 	}
 }

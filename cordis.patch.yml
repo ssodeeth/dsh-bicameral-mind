@@ -20,6 +20,7 @@
           timeoutMs: 20000
           maxTokens: 700
           finishGate: true
+          finishAlways: false
           subagents: false
         tool:
           defaultDepth: quick
@@ -27,6 +28,13 @@
             - plan
             - finish
           timeoutMs: 30000
+        # 成本护栏：每轮审议的硬上限；到上限后本轮不再自动审议，
+        # 显式 bicameral 调用返回预算提示。一次完整辩论记 3 次调用。
+        budget:
+          enabled: true
+          maxCallsPerTurn: 12
+          maxFullDebatesPerTurn: 3
+          maxTokensPerTurn: 24000
         voices:
           actor:
             fallbackToAgentRoute: true

@@ -16,6 +16,7 @@ const HELP = [
 	'  /bicameral status                          查看双声状态、两个模型路由、未决问题',
 	'  /bicameral last                            查看最近一次双声审议记录',
 	'  /bicameral level [off|advisory|balanced|strict|paranoid]  查看或切换介入程度',
+	'  /bicameral budget [relaxed|standard|frugal]  查看或切换成本护栏（每轮调用/完整辩论/token 估算）',
 	'  /bicameral on | off                        启用/停用二分心智',
 	'  /bicameral auto on | off                   启用/停用自动插话（执行中右脑主动纠偏）',
 	'  /bicameral voice actor <provider> <model>  为左脑钉死模型（默认跟随会话）',
@@ -30,7 +31,7 @@ export function buildCommand(runtime) {
 	return {
 		name: 'bicameral',
 		description: '二分心智：查看/调整双声模型路由、介入程度与自动纠偏',
-		input: { hint: '[status|last|level <name>|on|off|auto on|off|voice <role> <provider> <model>|probe]' },
+		input: { hint: '[status|last|level <name>|budget <tier>|on|off|auto on|off|voice <role> <provider> <model>|probe]' },
 		async handler(invocation) {
 			const agent = invocation?.agent
 			const raw = typeof invocation?.rawInput === 'string' ? invocation.rawInput.trim() : ''
@@ -48,6 +49,20 @@ export function buildCommand(runtime) {
 				if (sub === 'help' || sub === '-h' || sub === '--help') return ok(HELP)
 				if (sub === 'status') return ok(runtime.statusText(agent))
 				if (sub === 'last') return ok(runtime.lastText(agent))
+				if (sub === 'budget') {
+					const requested = (parts[1] ?? '').toLowerCase()
+					const view = runtime.configView()
+					if (requested.length === 0) {
+						const lines = view.budgetPresets.map((preset) =>
+							`${preset.id === view.budgetTier ? '▶' : ' '} ${preset.id.padEnd(9)} ${preset.title} — ${preset.description}`,
+						)
+						return ok(`${runtime.budgetText(agent)}\n\n${lines.join('\n')}`)
+					}
+					const outcome = runtime.applyBudgetPreset(requested)
+					if (!outcome.ok) return bad(outcome.message ?? outcome.error ?? '成本档位切换失败')
+					const meta = view.budgetPresets.find((preset) => preset.id === requested)
+					return ok(`成本护栏已切换为「${meta ? meta.title : requested}」（${requested}）。`)
+				}
 				if (sub === 'level') {
 					const requested = (parts[1] ?? '').toLowerCase()
 					if (requested.length === 0) {

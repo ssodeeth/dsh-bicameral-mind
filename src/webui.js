@@ -29,6 +29,9 @@ export const PROBE_PATH = '/bicameral-mind/probe'
 /** Settings page: apply one intervention level preset. */
 export const LEVEL_PATH = '/bicameral-mind/level'
 
+/** Settings page: apply one cost-guardrail preset. */
+export const BUDGET_PATH = '/bicameral-mind/budget'
+
 /** Read a bounded JSON request body; an oversized body is drained and rejected. */
 async function readJsonBody(req, limit = 8192) {
 	const chunks = []
@@ -286,6 +289,37 @@ export function registerWebUi(scope, runtime) {
 					const outcome = runtime.applyLevel(body?.level)
 					if (!outcome.ok) {
 						sendJson(res, 400, { ok: false, message: outcome.message ?? outcome.error ?? '档位应用失败' })
+						return
+					}
+					sendJson(res, 200, { ok: true, ...runtime.configView() })
+				} catch (error) {
+					sendJson(res, 400, { ok: false, message: error?.message ?? String(error) })
+				}
+			},
+		}),
+	)
+
+	disposers.push(
+		webServer.register({
+			kind: 'exact',
+			path: BUDGET_PATH,
+			handler: async (req, res) => {
+				const refusal = fence(scope, req)
+				if (refusal !== undefined) {
+					res.statusCode = refusal
+					res.end()
+					return
+				}
+				if (req.method !== 'POST') {
+					res.setHeader('allow', 'POST')
+					sendJson(res, 405, { ok: false, message: 'POST required' })
+					return
+				}
+				try {
+					const body = await readJsonBody(req, 8192)
+					const outcome = runtime.applyBudgetPreset(body?.tier)
+					if (!outcome.ok) {
+						sendJson(res, 400, { ok: false, message: outcome.message ?? outcome.error ?? '成本档位应用失败' })
 						return
 					}
 					sendJson(res, 200, { ok: true, ...runtime.configView() })

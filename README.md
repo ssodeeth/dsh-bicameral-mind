@@ -108,6 +108,7 @@ $DSH_HOME/storages/bicameral-mind/settings.json
 /bicameral status                              查看状态、两个模型路由、未决问题
 /bicameral last                                查看最近一次双声审议记录
 /bicameral level [off|advisory|balanced|strict|paranoid]  查看或切换介入程度
+/bicameral budget [relaxed|standard|frugal]    查看或切换成本护栏
 /bicameral on | off                            启用/停用二分心智
 /bicameral auto on | off                       启用/停用自动插话
 /bicameral voice actor <provider> <model>      为左脑钉死模型（默认跟随会话）
@@ -136,11 +137,29 @@ $DSH_HOME/storages/bicameral-mind/settings.json
 
 > 严格 / 偏执会显著增加模型调用次数与等待时间；建议先用「标准」，需要更强约束时再逐级提高。
 
+## 成本护栏
+
+设置页的「成本护栏」卡片和 `/bicameral budget` 控制**每轮**最多花多少：调用次数（一次完整辩论记 3 次）、完整辩论次数、token 估算（按每次 `maxTokens` 保守累加）。到上限后，本轮不再自动插话，显式 `bicameral` 调用会返回预算提示；下一轮自动重置。
+
+| 预设 | 每轮调用 | 完整辩论 | token 估算 |
+|---|---|---|---|
+| 宽松 `relaxed` | 30 | 8 | 60k |
+| 标准 `standard`（默认） | 12 | 3 | 24k |
+| 节约 `frugal` | 6 | 1 | 12k |
+
+也可以关闭护栏（不限制），或直接改三个数字，此时显示为「自定义」。
+
+```text
+/bicameral budget                查看护栏、本轮已用量与全部预设
+/bicameral budget frugal         切换到「节约」
+```
+
 ## 设置页（推荐方式）
 
 Web UI → 设置 → 「二分心智」，可以图形化配置：
 
 - 总开关；**介入程度档位**（关闭 / 提示 / 标准 / 严格 / 偏执）；左脑 / 右脑的 provider + model 下拉（模型目录来自 `ctx.llm.listProviders/listModels`，失败时可手填）
+- **成本护栏**：宽松 / 标准 / 节约预设 + 自定义每轮调用、完整辩论、token 估算上限，可单独关闭
 - 右脑候选降级链的增删：每行同样是 **provider / model 下拉**（与主选择器同一个模型目录）；换 provider 自动带出该 provider 的第一个 model；目录里没有的旧值会显示为「当前值（不在目录）」并原样保留；模型目录不可用时回退为手填
 - 「探测此路由」按钮（直接显示 `✔ 1.2s` / `✘ 错误`）
 - 自动插话的开关、监视工具、冷却、每轮上限、超时、maxTokens、收尾闸门等
@@ -165,12 +184,13 @@ src/voice.js       两个声音的模型调用：路由解析、候选链降级�
 src/state.js       每会话有界状态：任务锚点、最近动作、未决问题、审议记录
 src/config.js      配置归并与插件自有 settings.json
 src/levels.js      介入程度档位：预设参数、当前档位识别
+src/budget.js      成本护栏：预设、当前档位识别
 src/prompt.js      双声协议（system prompt section）
 src/tool.js        bicameral 工具定义（schema/输出/渲染）
 src/command.js     /bicameral 命令面
 src/webui.js       Web 路由：状态/开关/配置读写/模型目录/单路由探测
 client.js          Web UI：「内心对话」视图（对话/轨迹栏）+ 设置页「二分心智」
-test/              62 项单测（提示词/解析/格式化 + mock ctx 接线 + 设置路由 + 档位 + 术语一致性）
+test/              66 项单测（提示词/解析/格式化 + mock ctx 接线 + 设置路由 + 档位 + 成本护栏 + 术语一致性）
 ```
 
 ## 设计约束（为什么这样写）
@@ -198,7 +218,7 @@ cd <本插件目录>
 node --test test/examiner.test.mjs test/plugin.mock.test.mjs
 ```
 
-覆盖（62 项）：提示词分区与语言/stage 差异、裁决 JSON 的健壮解析（围栏/废话/散文/非法字段/截断）、长度上限、fail-safe（截断的 pass 不被信任）、工具注册、双路由（左/右脑不同模型、右脑失败降级与粘性路由、候选链）、自动插话在 step 边界注入与 pass 静默、每轮预算、收尾闸门只触发一次、未决问题合并语义、任务锚点不被后续消息覆盖、adapter 忽略取消时的硬截止、诊断路由与设置路由的鉴权/400/403、命令面与设置持久化、**介入程度五档位的参数映射与识别、通配工具复审、偏执档连只读命令也复审、严格档每轮收尾必审**、**术语一致性（左脑/右脑，旧称已清除）**。
+覆盖（66 项）：提示词分区与语言/stage 差异、裁决 JSON 的健壮解析（围栏/废话/散文/非法字段/截断）、长度上限、fail-safe（截断的 pass 不被信任）、工具注册、双路由（左/右脑不同模型、右脑失败降级与粘性路由、候选链）、自动插话在 step 边界注入与 pass 静默、每轮预算、收尾闸门只触发一次、未决问题合并语义、任务锚点不被后续消息覆盖、adapter 忽略取消时的硬截止、诊断路由与设置路由的鉴权/400/403、命令面与设置持久化、**介入程度五档位的参数映射与识别、通配工具复审、偏执档连只读命令也复审、严格档每轮收尾必审、成本护栏预设与自定义、调用/完整辩论/token 三重拦截与跨轮重置**、**术语一致性（左脑/右脑，旧称已清除）**。
 
 仓库 push 后，CI（GitHub Actions）会在 Node 20/22 上跑同样的语法检查与测试。
 
@@ -226,7 +246,7 @@ node --test test/examiner.test.mjs test/plugin.mock.test.mjs
 发布前检查（维护者）：
 
 ```powershell
-npm run verify          # 语法检查 + 62 项单测
+npm run verify          # 语法检查 + 66 项单测
 npm pack --dry-run      # 核对打包内容
 ```
 
