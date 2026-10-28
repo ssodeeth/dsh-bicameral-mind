@@ -109,6 +109,16 @@ window.__ModuleLoader__.load({
 				"set.levelCustom": "当前参数为自定义，不符合任何预设。",
 				"set.levelApplying": "正在应用…",
 				"set.levelSwitched": "已切换到「{title}」",
+				"set.level.off.title": "关闭",
+				"set.level.off.desc": "完全不介入：协议与工具均不可用，不做任何自动复审。",
+				"set.level.advisory.title": "提示",
+				"set.level.advisory.desc": "只在左脑显式调用 bicameral 时介入；不主动插话、不做收尾检查。",
+				"set.level.balanced.title": "标准",
+				"set.level.balanced.desc": "有后果的写入 / 执行后主动复核；未决问题未收敛时收尾闸门介入。",
+				"set.level.strict.title": "严格",
+				"set.level.strict.desc": "所有工具动作都复核（明显只读的 shell 命令除外）；每轮收尾都会再审一次；计划 / 阶段 / 收尾用完整审议。",
+				"set.level.paranoid.title": "偏执",
+				"set.level.paranoid.desc": "连只读命令也复核；每次审议默认完整对话；冷却为 0、每轮预算最高，成本与延迟最高。",
 				"set.intro": "左脑＝执行者（会话模型）；右脑＝校正者（独立模型），可配成另一个模型。",
 				"set.enabled": "启用二分心智",
 				"set.enabledHint": "总开关。关闭后右脑不再自动插话，审议工具仍可手动调用。",
@@ -146,6 +156,8 @@ window.__ModuleLoader__.load({
 				"set.maxTokens": "最大输出 Token",
 				"set.finishGate": "收尾闸门",
 				"set.finishGateHint": "存在未决问题时阻止草率收尾。",
+				"set.finishAlways": "每轮收尾必审",
+				"set.finishAlwaysHint": "没有未决问题时也审一次最终回答（严格 / 偏执档默认开启）。",
 				"set.includeErrors": "包含失败的工具结果",
 				"set.includeErrorsHint": "默认忽略失败调用。",
 				"set.subagents": "子智能体也审议",
@@ -221,6 +233,16 @@ window.__ModuleLoader__.load({
 				"set.levelCustom": "The current parameters are custom and match no preset.",
 				"set.levelApplying": "Applying…",
 				"set.levelSwitched": "Switched to “{title}”",
+				"set.level.off.title": "Off",
+				"set.level.off.desc": "No protocol, no usable tool, no automatic review.",
+				"set.level.advisory.title": "Advisory",
+				"set.level.advisory.desc": "Only when the actor explicitly calls bicameral; no unprompted interjections or finish checks.",
+				"set.level.balanced.title": "Balanced",
+				"set.level.balanced.desc": "Reviews write/execute actions; the finish gate runs only while issues are pending.",
+				"set.level.strict.title": "Strict",
+				"set.level.strict.desc": "Reviews every tool action (except clearly read-only shell commands); every turn ending is reviewed; plan/checkpoint/finish use full debate.",
+				"set.level.paranoid.title": "Paranoid",
+				"set.level.paranoid.desc": "Even read-only commands are reviewed; every debate is full by default; zero cooldown and the highest budget — highest cost and latency.",
 				"set.intro": "Left brain = the executor (session model); Right brain = the corrector (an independent model, possibly a different one).",
 				"set.enabled": "Enable Bicameral Mind",
 				"set.enabledHint": "Master switch. When off, the right brain stops interjecting; the review tool still works on demand.",
@@ -258,6 +280,8 @@ window.__ModuleLoader__.load({
 				"set.maxTokens": "Max output tokens",
 				"set.finishGate": "End-of-turn gate",
 				"set.finishGateHint": "Keep the turn open while issues are unresolved.",
+				"set.finishAlways": "Review every turn ending",
+				"set.finishAlwaysHint": "Review the final answer even when no issues are pending (on in strict / paranoid).",
 				"set.includeErrors": "Include failed tool results",
 				"set.includeErrorsHint": "Failed calls are ignored by default.",
 				"set.subagents": "Review subagents too",
@@ -335,6 +359,7 @@ window.__ModuleLoader__.load({
 					subagents: false,
 					logPasses: false,
 					finishGate: true,
+					finishAlways: false,
 					shellReadGuard: true,
 				},
 				tool: { defaultDepth: "quick", fullStages: ["plan", "finish"] },
@@ -1456,6 +1481,7 @@ window.__ModuleLoader__.load({
 					timeoutMs: String(Number.isSafeInteger(auto.timeoutMs) ? auto.timeoutMs : fallback.autoReview.timeoutMs),
 					maxTokens: String(Number.isSafeInteger(auto.maxTokens) ? auto.maxTokens : fallback.autoReview.maxTokens),
 					finishGate: auto.finishGate !== false,
+					finishAlways: auto.finishAlways === true,
 					includeErrors: auto.includeErrors !== false,
 					subagents: auto.subagents === true,
 				},
@@ -2669,6 +2695,7 @@ window.__ModuleLoader__.load({
 				const autoPatch = {};
 				if (auto.enabled !== (beforeAuto.enabled !== false)) autoPatch.enabled = auto.enabled;
 				if (auto.finishGate !== (beforeAuto.finishGate !== false)) autoPatch.finishGate = auto.finishGate;
+				if (auto.finishAlways !== (beforeAuto.finishAlways === true)) autoPatch.finishAlways = auto.finishAlways;
 				if (auto.includeErrors !== (beforeAuto.includeErrors !== false)) autoPatch.includeErrors = auto.includeErrors;
 				if (auto.subagents !== (beforeAuto.subagents === true)) autoPatch.subagents = auto.subagents;
 				const tools = parseTools(auto.toolsText);
@@ -3080,8 +3107,14 @@ window.__ModuleLoader__.load({
 						levels.map((entry) => {
 							const id = entry.id;
 							const active = !levelCustom && currentLevel === id;
-							const description = typeof entry.description === "string" ? entry.description : "";
-							const title = typeof entry.title === "string" && entry.title.length > 0 ? entry.title : id;
+							const titleKey = "set.level." + id + ".title";
+							const descKey = "set.level." + id + ".desc";
+							const hasTitle = Object.prototype.hasOwnProperty.call(FALLBACK, titleKey);
+							const hasDesc = Object.prototype.hasOwnProperty.call(FALLBACK, descKey);
+							const description = hasDesc
+								? tx(descKey)
+								: (typeof entry.description === "string" ? entry.description : "");
+							const title = hasTitle ? tx(titleKey) : (typeof entry.title === "string" && entry.title.length > 0 ? entry.title : id);
 							return h(
 								"button",
 								{
@@ -3211,6 +3244,7 @@ window.__ModuleLoader__.load({
 					)),
 				),
 				renderSwitchRow(tx("set.finishGate"), tx("set.finishGateHint"), draft.autoReview.finishGate, (value) => setAuto("finishGate", value)),
+				renderSwitchRow(tx("set.finishAlways"), tx("set.finishAlwaysHint"), draft.autoReview.finishAlways, (value) => setAuto("finishAlways", value)),
 				renderSwitchRow(tx("set.includeErrors"), tx("set.includeErrorsHint"), draft.autoReview.includeErrors, (value) => setAuto("includeErrors", value)),
 				renderSwitchRow(tx("set.subagents"), tx("set.subagentsHint"), draft.autoReview.subagents, (value) => setAuto("subagents", value)),
 			);

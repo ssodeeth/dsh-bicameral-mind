@@ -791,6 +791,7 @@ export function createRuntime(ctx, config) {
 				subagents: cfg.autoReview.subagents,
 				logPasses: cfg.autoReview.logPasses,
 				finishGate: cfg.autoReview.finishGate,
+				finishAlways: cfg.autoReview.finishAlways,
 				shellReadGuard: cfg.autoReview.shellReadGuard,
 			},
 			tool: { defaultDepth: cfg.tool.defaultDepth, fullStages: [...cfg.tool.fullStages] },

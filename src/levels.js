@@ -25,7 +25,7 @@ export const LEVELS = [
 	{
 		id: 'off',
 		title: '关闭',
-		description: '完全不介入：不注入协议、不注册工具、不做任何自动复审。',
+		description: '完全不介入：协议与工具均不可用，不做任何自动复审。',
 	},
 	{
 		id: 'advisory',
@@ -40,7 +40,7 @@ export const LEVELS = [
 	{
 		id: 'strict',
 		title: '严格',
-		description: '所有工具动作都复核；每轮收尾都会再审一次；计划 / 阶段 / 收尾用完整审议。',
+		description: '所有工具动作都复核（明显只读的 shell 命令除外）；每轮收尾都会再审一次；计划 / 阶段 / 收尾用完整审议。',
 	},
 	{
 		id: 'paranoid',
