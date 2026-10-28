@@ -237,8 +237,6 @@ node --test test/examiner.test.mjs test/plugin.mock.test.mjs
 
 ## 仓库与维护
 
-> 仓库需要先创建并 push；在此之前下面的链接会 404。
-
 - 仓库：<https://github.com/ssodeeth/dsh-bicameral-mind>
 - 问题反馈：<https://github.com/ssodeeth/dsh-bicameral-mind/issues>
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)
