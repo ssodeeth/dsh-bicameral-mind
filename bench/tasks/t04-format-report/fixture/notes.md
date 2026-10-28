@@ -1,0 +1,5 @@
+- login latency p95 1.2s, worse after deploy
+- retry storms: 42 occurrences in the last hour
+- 3 checkout alerts fired overnight
+- decided to add a short-lived cache
+- next: measure p99, write the on-call runbook

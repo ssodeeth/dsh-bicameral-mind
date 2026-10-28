@@ -1,0 +1,10 @@
+[
+  { "task": "t01-fix-bug", "arm": "off", "run": 1, "pass": false, "ms": 91000, "tokens": 3300, "interventions": 0, "falseInterventions": 0 },
+  { "task": "t01-fix-bug", "arm": "on", "run": 1, "pass": true, "ms": 104000, "tokens": 4200, "interventions": 2, "falseInterventions": 0 },
+  { "task": "t02-csv-clean", "arm": "off", "run": 1, "pass": true, "ms": 76000, "tokens": 2900, "interventions": 0, "falseInterventions": 0 },
+  { "task": "t02-csv-clean", "arm": "on", "run": 1, "pass": true, "ms": 88000, "tokens": 3600, "interventions": 1, "falseInterventions": 0 },
+  { "task": "t03-rename-api", "arm": "off", "run": 1, "pass": true, "ms": 82000, "tokens": 3000, "interventions": 0, "falseInterventions": 0 },
+  { "task": "t03-rename-api", "arm": "on", "run": 1, "pass": true, "ms": 95000, "tokens": 3800, "interventions": 3, "falseInterventions": 1 },
+  { "task": "t04-format-report", "arm": "off", "run": 1, "pass": true, "ms": 64000, "tokens": 2400, "interventions": 0, "falseInterventions": 0 },
+  { "task": "t04-format-report", "arm": "on", "run": 1, "pass": true, "ms": 79000, "tokens": 3100, "interventions": 1, "falseInterventions": 0 }
+]

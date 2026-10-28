@@ -41,6 +41,7 @@
     "check": "node --check index.js && node --check client.js && node --check src/budget.js && node --check src/command.js && node --check src/config.js && node --check src/examiner.js && node --check src/levels.js && node --check src/prompt.js && node --check src/runtime.js && node --check src/state.js && node --check src/tool.js && node --check src/util.js && node --check src/voice.js && node --check src/webui.js",
     "test": "node --test test/examiner.test.mjs test/plugin.mock.test.mjs",
     "bench": "node bench/benchmark.mjs",
+    "capability": "node bench/capability.mjs",
     "verify": "npm run check && npm test"
   },
   "engines": {

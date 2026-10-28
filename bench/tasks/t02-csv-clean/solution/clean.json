@@ -1,0 +1,5 @@
+[
+  { "id": 1, "name": "Alice", "amount": 10.5, "date": "2026-01-02" },
+  { "id": 6, "name": "Frank", "amount": 7.25, "date": "2026-01-07" },
+  { "id": 7, "name": "Grace", "amount": 3.5, "date": "2026-01-08" }
+]
