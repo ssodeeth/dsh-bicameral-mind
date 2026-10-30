@@ -103,6 +103,8 @@ function freshSession(sessionId) {
 		/** Outstanding examiner issues the actor has not resolved yet. */
 		pendingIssues: [],
 		pendingAt: 0,
+		/** Per-session examiner route override; null means follow the settings default. */
+		examinerOverride: null,
 		/** Bounded rolling window of consequential actions, for evidence. */
 		actions: [],
 		/** Newest-first transcript entries. */
@@ -273,6 +275,23 @@ export class BicameralStore {
 				return `${index + 1}. [${issue.severity}] ${issue.problem}${age} -> ${issue.fix}`
 			})
 			.join('\n')
+	}
+
+	/** Set (or clear) the per-session examiner route override. */
+	setExaminerOverride(sessionId, override) {
+		const state = this.stateFor(sessionId)
+		state.examinerOverride = override === null || override === undefined
+			? null
+			: {
+					provider: truncate(override.provider, 100),
+					model: truncate(override.model, 200),
+				}
+		return state.examinerOverride
+	}
+
+	/** Read the per-session examiner override. */
+	examinerOverride(sessionId) {
+		return this.peek(sessionId)?.examinerOverride ?? null
 	}
 
 	/** Remove selected outstanding issues (human or examiner resolution). */

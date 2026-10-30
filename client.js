@@ -105,7 +105,14 @@ window.__ModuleLoader__.load({
 				// Composer toolbar right-brain model picker.
 				"pick.trigger": "选择右脑模型",
 				"pick.follow": "跟随",
-				"pick.followSession": "跟随会话模型",
+				"pick.followDefault": "跟随设置默认",
+				"pick.default": "默认",
+				"pick.manual": "手动填写",
+				"pick.manualHint": "模型目录不可用时可直接填 provider / model",
+				"pick.manualProvider": "provider",
+				"pick.manualModel": "model",
+				"pick.apply": "应用",
+				"pick.retry": "重试",
 				"pick.more": "更多设置：设置 → 二分心智",
 				"pick.loading": "正在读取模型清单…",
 				"pick.failed": "模型清单不可用",
@@ -262,7 +269,14 @@ window.__ModuleLoader__.load({
 				// Composer toolbar right-brain model picker.
 				"pick.trigger": "Choose the right-brain model",
 				"pick.follow": "follow session",
-				"pick.followSession": "Follow the session model",
+				"pick.followDefault": "Follow settings default",
+				"pick.default": "Default",
+				"pick.manual": "Enter manually",
+				"pick.manualHint": "Use provider / model directly when the catalog is unavailable",
+				"pick.manualProvider": "provider",
+				"pick.manualModel": "model",
+				"pick.apply": "Apply",
+				"pick.retry": "Retry",
 				"pick.more": "More settings: Settings → Bicameral Mind",
 				"pick.loading": "Loading model catalog…",
 				"pick.failed": "Model catalog unavailable",
@@ -2292,6 +2306,57 @@ window.__ModuleLoader__.load({
   line-height: 15px;
   overflow-wrap: anywhere;
 }
+.bcm-pick-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+}
+.bcm-pick-manualRow {
+  display: flex;
+  gap: 4px;
+}
+.bcm-pick-input {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--dsw-alias-border-secondary, var(--dsw-alias-border-base));
+  border-radius: var(--dsw-radius-sm, 4px);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+.bcm-pick-apply,
+.bcm-pick-manualToggle,
+.bcm-pick-retry {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--dsw-alias-border-secondary, var(--dsw-alias-border-base));
+  border-radius: var(--dsw-radius-sm, 4px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.bcm-pick-apply:hover:not(:disabled),
+.bcm-pick-manualToggle:hover:not(:disabled),
+.bcm-pick-retry:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.bcm-pick-manualToggle,
+.bcm-pick-retry {
+  align-self: flex-start;
+  margin: 0 8px;
+}
+.bcm-pick-apply:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 .bcm-pick-footer {
   flex: none;
   margin-top: 2px;
@@ -2314,12 +2379,15 @@ window.__ModuleLoader__.load({
 		 * the popup; without a session id nothing renders.
 		 */
 		function BicameralModelPicker({ sessionId, t }) {
-			const [examiner, setExaminer] = React.useState(null);
+			const [examiner, setExaminer] = React.useState({ override: null, routes: [] });
 			const [open, setOpen] = React.useState(false);
 			const [catalog, setCatalog] = React.useState(null);
 			const [catalogState, setCatalogState] = React.useState("idle");
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = React.useState("");
+			const [manualOpen, setManualOpen] = React.useState(false);
+			const [manualProvider, setManualProvider] = React.useState("");
+			const [manualModel, setManualModel] = React.useState("");
 			const rootRef = React.useRef(null);
 			const aliveRef = React.useRef(true);
 
@@ -2344,11 +2412,11 @@ window.__ModuleLoader__.load({
 				);
 			}, [t]);
 
-			/** Read the current examiner pin from the Host config view. */
+			/** Read the current session's examiner override and effective route. */
 			const syncExaminer = React.useCallback(async () => {
 				if (!hasSession) return;
 				try {
-					const response = await fetch("/bicameral-mind/config", {
+					const response = await fetch(`/bicameral-mind/state?sessionId=${encodeURIComponent(sessionId)}`, {
 						method: "GET",
 						cache: "no-store",
 						headers: { accept: "application/json" },
@@ -2356,17 +2424,20 @@ window.__ModuleLoader__.load({
 					const payload = await readJsonResponse(response);
 					if (!aliveRef.current) return;
 					if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true) return;
-					const voice = payload.settings !== null && typeof payload.settings === "object"
-						&& payload.settings.voices !== null && typeof payload.settings.voices === "object"
-						? payload.settings.voices.examiner
+					const voice = payload.voices !== null && typeof payload.voices === "object"
+						? payload.voices.examiner
 						: undefined;
-					if (voice !== null && typeof voice === "object") {
-						setExaminer({ provider: asText(voice.provider), model: asText(voice.model) });
-					}
+					const override = voice !== null && typeof voice === "object" && voice.override !== null && typeof voice.override === "object"
+						? { provider: asText(voice.override.provider), model: asText(voice.override.model) }
+						: null;
+					const routes = voice !== null && typeof voice === "object" && Array.isArray(voice.routes)
+						? voice.routes.filter((route) => typeof route === "string" && route.length > 0)
+						: [];
+					setExaminer({ override, routes });
 				} catch {
 					/* the label simply stays at its last value */
 				}
-			}, [hasSession]);
+			}, [hasSession, sessionId]);
 
 			// Seed the trigger label on mount and stop late writes on unmount.
 			React.useEffect(() => {
@@ -2377,15 +2448,17 @@ window.__ModuleLoader__.load({
 				};
 			}, [syncExaminer]);
 
-			// Lazy-load the catalog the first time the popup opens.
+			// Lazy-load the catalog the first time the popup opens. Force a fresh
+			// read so a previous timed-out/degraded cache does not stick.
 			React.useEffect(() => {
 				if (!open || catalogState !== "idle") return undefined;
 				let disposed = false;
 				const controller = new AbortController();
+				const timer = setTimeout(() => controller.abort(), 8000);
 				setCatalogState("loading");
 				(async () => {
 					try {
-						const response = await fetch("/bicameral-mind/models", {
+						const response = await fetch("/bicameral-mind/models?force=1", {
 							method: "GET",
 							cache: "no-store",
 							headers: { accept: "application/json" },
@@ -2406,6 +2479,7 @@ window.__ModuleLoader__.load({
 				})();
 				return () => {
 					disposed = true;
+					clearTimeout(timer);
 					controller.abort();
 				};
 			}, [open, catalogState]);
@@ -2431,24 +2505,28 @@ window.__ModuleLoader__.load({
 
 			if (!hasSession) return null;
 
-			const provider = asText(examiner?.provider);
-			const model = asText(examiner?.model);
-			const pinned = provider.length > 0 && model.length > 0;
+			const provider = asText(examiner.override?.provider);
+			const model = asText(examiner.override?.model);
+			const hasOverride = provider.length > 0 && model.length > 0;
+			const routes = Array.isArray(examiner.routes) ? examiner.routes : [];
+			const effectiveRoute = routes.length > 0 ? routes[0] : "";
+			const defaultRoute = hasOverride ? (routes[1] ?? "") : effectiveRoute;
 			const shortModel = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
-			const triggerLabel = `${tx("voice.examiner")} · ${pinned && shortModel.length > 0 ? shortModel : tx("pick.follow")}`;
+			const shortDefault = defaultRoute.includes("/") ? defaultRoute.slice(defaultRoute.lastIndexOf("/") + 1) : defaultRoute;
+			const triggerLabel = `${tx("voice.examiner")} · ${hasOverride && shortModel.length > 0 ? shortModel : (shortDefault.length > 0 ? `${tx("pick.default")} ${shortDefault}` : tx("pick.follow"))}`;
 			const providers = catalog !== null && Array.isArray(catalog.providers) ? catalog.providers : [];
 
-			/** PATCH the examiner route, then adopt the Host's answer. */
+			/** PATCH the session's examiner route, then adopt the Host's answer. */
 			const choose = async (nextProvider, nextModel) => {
 				if (busy) return;
 				const follow = nextProvider.length === 0;
 				const body = follow
-					? { patch: { voices: { examiner: { provider: "", model: "" } } } }
-					: { patch: { voices: { examiner: { provider: nextProvider, model: nextModel } } } };
+					? { sessionId, provider: "", model: "" }
+					: { sessionId, provider: nextProvider, model: nextModel };
 				setBusy(true);
 				setError("");
 				try {
-					const response = await fetch("/bicameral-mind/config", {
+					const response = await fetch("/bicameral-mind/session-voice", {
 						method: "POST",
 						headers: { "content-type": "application/json" },
 						body: JSON.stringify(body),
@@ -2460,17 +2538,14 @@ window.__ModuleLoader__.load({
 							: `HTTP ${response.status}`;
 						throw new Error(message);
 					}
-					const voice = payload.settings !== null && typeof payload.settings === "object"
-						&& payload.settings.voices !== null && typeof payload.settings.voices === "object"
-						? payload.settings.voices.examiner
-						: undefined;
-					if (follow) {
-						setExaminer({ provider: "", model: "" });
-					} else if (voice !== null && typeof voice === "object") {
-						setExaminer({ provider: asText(voice.provider), model: asText(voice.model) });
-					} else {
-						setExaminer({ provider: nextProvider, model: nextModel });
-					}
+					const nextOverride = payload.override !== null && typeof payload.override === "object"
+						? { provider: asText(payload.override.provider), model: asText(payload.override.model) }
+						: null;
+					setExaminer({
+						override: nextOverride,
+						routes: Array.isArray(payload.routes) ? payload.routes.filter((route) => typeof route === "string") : [],
+					});
+					setManualOpen(false);
 					setOpen(false);
 				} catch (reason) {
 					const message = reason instanceof Error && reason.message.length > 0 ? reason.message : String(reason);
@@ -2480,18 +2555,28 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			const applyManual = () => {
+				const nextProvider = asText(manualProvider).trim();
+				const nextModel = asText(manualModel).trim();
+				if (nextProvider.length === 0 || nextModel.length === 0) {
+					setError(tx("pick.manualHint"));
+					return;
+				}
+				choose(nextProvider, nextModel);
+			};
+
 			const followOption = h(
 				"button",
 				{
 					type: "button",
 					className: "bcm-pick-option",
 					role: "option",
-					"aria-selected": pinned ? "false" : "true",
+					"aria-selected": hasOverride ? "false" : "true",
 					disabled: busy,
 					onClick: () => choose("", ""),
 				},
-				h("span", { className: "bcm-pick-check", "aria-hidden": true }, pinned ? "" : "\u2713"),
-				h("span", { className: "bcm-pick-optionLabel" }, tx("pick.followSession")),
+				h("span", { className: "bcm-pick-check", "aria-hidden": true }, hasOverride ? "" : "\u2713"),
+				h("span", { className: "bcm-pick-optionLabel" }, tx("pick.followDefault")),
 			);
 
 			const groups = providers.map((entry) => {
@@ -2528,6 +2613,8 @@ window.__ModuleLoader__.load({
 				);
 			});
 
+			const hasCatalogGroups = groups.some((group) => group !== null);
+			const showManual = manualOpen || catalogState === "failed" || (catalogState === "ready" && !hasCatalogGroups);
 			const popup = open
 				? h(
 					"div",
@@ -2536,8 +2623,54 @@ window.__ModuleLoader__.load({
 					h("div", { className: "bcm-pick-sep", "aria-hidden": true }),
 					catalogState === "loading" ? h("div", { className: "bcm-pick-hint", role: "status" }, tx("pick.loading")) : null,
 					catalogState === "failed" ? h("div", { className: "bcm-pick-error", role: "status" }, tx("pick.failed")) : null,
-					catalogState === "ready" && providers.length === 0 ? h("div", { className: "bcm-pick-error", role: "status" }, tx("pick.failed")) : null,
+					catalogState === "ready" && !hasCatalogGroups ? h("div", { className: "bcm-pick-error", role: "status" }, tx("pick.failed")) : null,
 					catalogState === "ready" ? groups : null,
+					catalogState === "failed"
+						? h(
+								"button",
+								{
+									type: "button",
+									className: "bcm-pick-retry",
+									onClick: () => {
+										setCatalog(null);
+										setCatalogState("idle");
+									},
+								},
+								tx("pick.retry"),
+							)
+						: null,
+					showManual
+						? h(
+								"div",
+								{ className: "bcm-pick-manual" },
+								h("div", { className: "bcm-pick-hint" }, tx("pick.manualHint")),
+								h(
+									"div",
+									{ className: "bcm-pick-manualRow" },
+									h("input", {
+										className: "bcm-pick-input",
+										placeholder: tx("pick.manualProvider"),
+										value: manualProvider,
+										onChange: (event) => setManualProvider(event.target.value),
+									}),
+									h("input", {
+										className: "bcm-pick-input",
+										placeholder: tx("pick.manualModel"),
+										value: manualModel,
+										onChange: (event) => setManualModel(event.target.value),
+									}),
+									h(
+										"button",
+										{ type: "button", className: "bcm-pick-apply", disabled: busy, onClick: applyManual },
+										tx("pick.apply"),
+									),
+								),
+							)
+						: h(
+								"button",
+								{ type: "button", className: "bcm-pick-manualToggle", onClick: () => setManualOpen(true) },
+								tx("pick.manual"),
+							),
 					error.length > 0 ? h("div", { className: "bcm-pick-error", role: "status" }, error) : null,
 					busy ? h("div", { className: "bcm-pick-hint", role: "status" }, tx("pick.saving")) : null,
 					h("div", { className: "bcm-pick-footer" }, tx("pick.more")),

@@ -554,7 +554,7 @@ describe('diagnostics route', () => {
 		}
 		const { ctx } = createFakeCtx({ webServer })
 		apply(ctx, { enabled: true })
-		assert.equal(routes.length, 8)
+		assert.equal(routes.length, 9)
 		const stateRoute = routes.find((route) => route.path === '/bicameral-mind/state')
 		const toggleRoute = routes.find((route) => route.path === '/bicameral-mind/toggle')
 
@@ -608,6 +608,7 @@ describe('diagnostics route', () => {
 		const levelRoute = routes.find((route) => route.path === '/bicameral-mind/level')
 		const budgetRoute = routes.find((route) => route.path === '/bicameral-mind/budget')
 		const issuesRoute = routes.find((route) => route.path === '/bicameral-mind/issues')
+		const sessionVoiceRoute = routes.find((route) => route.path === '/bicameral-mind/session-voice')
 		const sameOrigin = { host: '127.0.0.1:46843', 'sec-fetch-site': 'same-origin' }
 
 		const got = createRes()
@@ -760,6 +761,21 @@ describe('diagnostics route', () => {
 		const issueWrongMethod = createRes()
 		await issuesRoute.handler({ method: 'GET', url: '/bicameral-mind/issues', headers: sameOrigin }, issueWrongMethod)
 		assert.equal(issueWrongMethod.statusCode, 405)
+
+		const sessionVoice = createRes()
+		const sessionVoiceRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/session-voice',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ sessionId: 'session-voice', provider: 'prov-a', model: 'model-a' }))
+			},
+		}
+		await sessionVoiceRoute.handler(sessionVoiceRequest, sessionVoice)
+		assert.equal(sessionVoice.statusCode, 200)
+		const sessionVoiceBody = JSON.parse(sessionVoice.body)
+		assert.equal(sessionVoiceBody.override.provider, 'prov-a')
+		assert.ok(sessionVoiceBody.routes[0].includes('prov-a/model-a'))
 
 		// reset persisted settings so later tests see the defaults again
 		const reset = createRes()
@@ -1118,6 +1134,31 @@ describe('stale issue handling', () => {
 		assert.equal(runtime.store.pendingIssuesText(agent.id), '')
 		runtime.applyLevel('balanced')
 	})
+	test('per-session examiner override takes precedence over the settings default', () => {
+		const { ctx } = createFakeCtx()
+		const runtime = createRuntime(ctx, {})
+		const agent = createFakeAgent({ id: 'session-override' })
+		const before = runtime.routesFor(agent, 'examiner')
+		assert.equal(before[0].provider, 'agent-prov')
+
+		const set = runtime.setSessionExaminer('session-override', { provider: 'prov-a', model: 'model-a' })
+		assert.equal(set.ok, true)
+		assert.equal(set.override.provider, 'prov-a')
+		const routes = runtime.routesFor(agent, 'examiner')
+		assert.equal(routes[0].provider, 'prov-a')
+		assert.equal(routes[0].model, 'model-a')
+		assert.ok(routes.some((route) => route.provider === 'agent-prov'), 'settings default stays as fallback')
+
+		const snap = runtime.snapshot('session-override')
+		assert.equal(snap.voices.examiner.override.provider, 'prov-a')
+		assert.equal(snap.voices.examiner.routes[0], 'prov-a/model-a')
+
+		const cleared = runtime.setSessionExaminer('session-override', { provider: '', model: '' })
+		assert.equal(cleared.override, null)
+		assert.equal(runtime.routesFor(agent, 'examiner')[0].provider, 'agent-prov')
+		assert.equal(runtime.setSessionExaminer('', {}).ok, false)
+	})
+
 	test('human resolve/clear removes issues and snapshot exposes details', () => {
 		const { ctx } = createFakeCtx()
 		const runtime = createRuntime(ctx, {})

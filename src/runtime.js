@@ -187,7 +187,36 @@ export function createRuntime(ctx, config) {
 	/** Routes one voice may use for one agent, best first. */
 	function routesFor(agent, role) {
 		const voice = role === 'actor' ? settings.voices.actor : settings.voices.examiner
-		return resolveVoiceRoutes(ctx, agent, voice)
+		const routes = resolveVoiceRoutes(ctx, agent, voice)
+		if (role !== 'examiner' || agent?.id === undefined) return routes
+		const override = store.examinerOverride(agent.id)
+		if (override === null) return routes
+		const key = `${override.provider}/${override.model}`
+		return [{ provider: override.provider, model: override.model }, ...routes.filter((route) => `${route.provider}/${route.model}` !== key)]
+	}
+
+	/** Routes shown for one session, including its examiner override. */
+	function effectiveRoutes(sessionId, role) {
+		if (role !== 'examiner' || typeof sessionId !== 'string' || sessionId.length === 0) return routesFor(undefined, role)
+		const override = store.examinerOverride(sessionId)
+		const routes = routesFor(undefined, role)
+		if (override === null) return routes
+		const key = `${override.provider}/${override.model}`
+		return [{ provider: override.provider, model: override.model }, ...routes.filter((route) => `${route.provider}/${route.model}` !== key)]
+	}
+
+	/** Set or clear the per-session examiner override. */
+	function setSessionExaminer(sessionId, input) {
+		if (typeof sessionId !== 'string' || sessionId.length === 0) return { ok: false, message: 'sessionId is required' }
+		const provider = readString(input?.provider, 100)
+		const model = readString(input?.model, 200)
+		if (provider.length === 0 && model.length === 0) {
+			store.setExaminerOverride(sessionId, null)
+			return { ok: true, override: null, routes: effectiveRoutes(sessionId, 'examiner').map((route) => `${route.provider}/${route.model}`) }
+		}
+		if (provider.length === 0 || model.length === 0) return { ok: false, message: 'provider 和 model 必须同时填写或同时留空' }
+		const override = store.setExaminerOverride(sessionId, { provider, model })
+		return { ok: true, override, routes: effectiveRoutes(sessionId, 'examiner').map((route) => `${route.provider}/${route.model}`) }
 	}
 
 	/** Compact description of one voice's route for commands and the panel. */
@@ -1067,25 +1096,29 @@ export function createRuntime(ctx, config) {
 		} catch {
 			infos = []
 		}
-		const providers = []
-		for (const info of Array.isArray(infos) ? infos : []) {
-			const provider = typeof info?.id === 'string' ? info.id : ''
-			if (provider.length === 0) continue
-			let models = []
-			try {
-				const timeout = new Promise((resolve) => setTimeout(() => resolve(undefined), 4000))
-				const listed = await Promise.race([llm.listModels(provider), timeout])
-				if (Array.isArray(listed)) {
-					models = listed
-						.map((model) => ({ id: String(model?.id ?? ''), name: String(model?.name ?? model?.id ?? '') }))
-						.filter((model) => model.id.length > 0)
+		// Discover providers in parallel with a short per-provider deadline; a slow
+		// or broken adapter must not leave the picker stuck for tens of seconds.
+		const entries = Array.isArray(infos) ? infos : []
+		const providers = await Promise.all(
+			entries.map(async (info) => {
+				const provider = typeof info?.id === 'string' ? info.id : ''
+				if (provider.length === 0) return undefined
+				let models = []
+				try {
+					const timeout = new Promise((resolve) => setTimeout(() => resolve(undefined), 2500))
+					const listed = await Promise.race([llm.listModels(provider), timeout])
+					if (Array.isArray(listed)) {
+						models = listed
+							.map((model) => ({ id: String(model?.id ?? ''), name: String(model?.name ?? model?.id ?? '') }))
+							.filter((model) => model.id.length > 0)
+					}
+				} catch {
+					models = []
 				}
-			} catch {
-				models = []
-			}
-			providers.push({ provider, name: typeof info?.name === 'string' ? info.name : provider, models })
-		}
-		modelCatalog = { providers }
+				return { provider, name: typeof info?.name === 'string' ? info.name : provider, models }
+			}),
+		)
+		modelCatalog = { providers: providers.filter((entry) => entry !== undefined), fetchedAt: nowMs() }
 		modelCatalogAt = nowMs()
 		return modelCatalog
 	}
@@ -1128,7 +1161,8 @@ export function createRuntime(ctx, config) {
 					pinned: settings.voices.actor.provider.length > 0 && settings.voices.actor.model.length > 0,
 				},
 				examiner: {
-					routes: routesFor(undefined, 'examiner').map((route) => `${route.provider}/${route.model}`),
+					routes: effectiveRoutes(sessionId, 'examiner').map((route) => `${route.provider}/${route.model}`),
+					override: state?.examinerOverride ?? null,
 					pinned: settings.voices.examiner.provider.length > 0 && settings.voices.examiner.model.length > 0,
 				},
 			},
@@ -1170,6 +1204,7 @@ export function createRuntime(ctx, config) {
 		budgetText,
 		resolveIssues,
 		clearIssues,
+		setSessionExaminer,
 		availableModels,
 		probeVoice,
 		configView,

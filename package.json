@@ -1,6 +1,6 @@
 {
   "name": "dsh-bicameral-mind",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "type": "module",
   "description": "Bicameral Mind for DeepSeek Harness: a left-brain actor and an independently routed right-brain examiner (potentially a different model) that correct each other while the agent works.",
   "keywords": [

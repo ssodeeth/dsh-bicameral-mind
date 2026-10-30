@@ -35,6 +35,9 @@ export const BUDGET_PATH = '/bicameral-mind/budget'
 /** Inner-dialogue view: resolve or clear outstanding issues. */
 export const ISSUES_PATH = '/bicameral-mind/issues'
 
+/** Composer picker: per-session examiner route override. */
+export const SESSION_VOICE_PATH = '/bicameral-mind/session-voice'
+
 /** Read a bounded JSON request body; an oversized body is drained and rejected. */
 async function readJsonBody(req, limit = 8192) {
 	const chunks = []
@@ -235,7 +238,8 @@ export function registerWebUi(scope, runtime) {
 					return
 				}
 				try {
-					const catalog = await runtime.availableModels()
+					const url = new URL(req.url ?? MODELS_PATH, 'http://127.0.0.1')
+					const catalog = await runtime.availableModels(url.searchParams.get('force') === '1')
 					sendJson(res, 200, { ok: true, ...catalog })
 				} catch (error) {
 					sendJson(res, 500, { ok: false, message: error?.message ?? String(error) })
@@ -364,6 +368,37 @@ export function registerWebUi(scope, runtime) {
 						return
 					}
 					sendJson(res, 200, { ok: true, resolved: result.resolved, remaining: result.remaining })
+				} catch (error) {
+					sendJson(res, 400, { ok: false, message: error?.message ?? String(error) })
+				}
+			},
+		}),
+	)
+
+	disposers.push(
+		webServer.register({
+			kind: 'exact',
+			path: SESSION_VOICE_PATH,
+			handler: async (req, res) => {
+				const refusal = fence(scope, req)
+				if (refusal !== undefined) {
+					res.statusCode = refusal
+					res.end()
+					return
+				}
+				if (req.method !== 'POST') {
+					res.setHeader('allow', 'POST')
+					sendJson(res, 405, { ok: false, message: 'POST required' })
+					return
+				}
+				try {
+					const body = await readJsonBody(req, 8192)
+					const result = runtime.setSessionExaminer(body?.sessionId, body)
+					if (!result.ok) {
+						sendJson(res, 400, { ok: false, message: result.message })
+						return
+					}
+					sendJson(res, 200, { ok: true, ...result })
 				} catch (error) {
 					sendJson(res, 400, { ok: false, message: error?.message ?? String(error) })
 				}
