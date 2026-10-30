@@ -2,6 +2,16 @@
 
 本项目的所有重要变更都记录在这个文件里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.2] - 2026-10-30
+
+### 修复
+
+- **恢复输入框右脑选择器**：1.2.1 用箭头包装组件注册槽位，导致 `conversation.input.right` occupant 变为 inactive（界面上直接消失）。改回与 1.1.x 相同的直接注册方式，Remote 通过模块内变量注入；触发文案恢复为紧凑的 `右脑 · 模型/跟随`。
+
+### 验证
+
+- 70 项 `node --test` 通过，`node --check client.js` 通过；本地安装 1.2.2。
+
 ## [1.2.1] - 2026-10-30
 
 ### 修复

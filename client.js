@@ -42,6 +42,9 @@ window.__ModuleLoader__.load({
 		/** Locale namespace carried by the slot registration. */
 		const NS = "bicameralMind";
 
+		/** Host Remote face captured at mount (same catalog as the built-in selector). */
+		let hostRemote;
+
 		/** Snapshot polling interval. */
 		const POLL_MS = 2500;
 
@@ -2378,7 +2381,7 @@ window.__ModuleLoader__.load({
 		 * "follow" clears the pin. Escape, an outside press, or the trigger closes
 		 * the popup; without a session id nothing renders.
 		 */
-		function BicameralModelPicker({ sessionId, t, remote }) {
+		function BicameralModelPicker({ sessionId, t }) {
 			const [examiner, setExaminer] = React.useState({ override: null, routes: [] });
 			const [open, setOpen] = React.useState(false);
 			const [catalog, setCatalog] = React.useState(null);
@@ -2456,7 +2459,7 @@ window.__ModuleLoader__.load({
 				setCatalogState("loading");
 				(async () => {
 					try {
-						const sessionApi = remote !== null && typeof remote === "object" ? remote.session : undefined;
+						const sessionApi = hostRemote !== null && typeof hostRemote === "object" ? hostRemote.session : undefined;
 						if (sessionApi === null || typeof sessionApi !== "object" || typeof sessionApi.modelCatalog !== "function") {
 							setCatalogState("failed");
 							return;
@@ -2519,8 +2522,7 @@ window.__ModuleLoader__.load({
 			const effectiveRoute = routes.length > 0 ? routes[0] : "";
 			const defaultRoute = hasOverride ? (routes[1] ?? "") : effectiveRoute;
 			const shortModel = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
-			const shortDefault = defaultRoute.includes("/") ? defaultRoute.slice(defaultRoute.lastIndexOf("/") + 1) : defaultRoute;
-			const triggerLabel = `${tx("voice.examiner")} · ${hasOverride && shortModel.length > 0 ? shortModel : (shortDefault.length > 0 ? `${tx("pick.default")} ${shortDefault}` : tx("pick.follow"))}`;
+			const triggerLabel = `${tx("voice.examiner")} · ${hasOverride && shortModel.length > 0 ? shortModel : tx("pick.follow")}`;
 			const providers = catalog !== null && Array.isArray(catalog.providers) ? catalog.providers : [];
 
 			/** PATCH the session's examiner route, then adopt the Host's answer. */
@@ -3984,6 +3986,7 @@ window.__ModuleLoader__.load({
 		return {
 			inject: ["slots", "locale"],
 			apply(ctx) {
+				hostRemote = ctx.remote ?? ctx.get?.("remote");
 				// Own copy is registered through the locale service; a host that
 				// already owns this namespace must not make either surface fail.
 				ctx.effect(() => {
@@ -4016,10 +4019,7 @@ window.__ModuleLoader__.load({
 					id: "bicameral-mind-model",
 					order: 40,
 					locale: NS,
-				}, (props) => h(BicameralModelPicker, {
-					...props,
-					remote: ctx.remote ?? ctx.get?.("remote"),
-				})));
+				}, BicameralModelPicker));
 
 				// Settings navigation row + page; `label` is resolved live through
 				// the locale face so a language switch renames the row. A missing
