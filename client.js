@@ -2458,63 +2458,13 @@ window.__ModuleLoader__.load({
 				};
 			}, [syncExaminer]);
 
-			// Load the catalog from the plugin's own Host route; the settings page
-			// uses the same route, so both surfaces show the same provider set.
+			// This dynamic Client half has no direct Host catalog access; open the
+			// manual provider/model form instead of leaving a spinner forever.
 			React.useEffect(() => {
 				if (!open || catalogState !== "idle") return undefined;
-				let disposed = false;
-				setCatalogState("loading");
-				setCatalogError("");
-				(async () => {
-					try {
-						const remote = typeof resolveHostRemote === "function" ? resolveHostRemote() : hostRemote;
-						const sessionApi = remote !== null && typeof remote === "object" ? remote.session : undefined;
-						if (sessionApi === null || typeof sessionApi !== "object" || typeof sessionApi.modelCatalog !== "function") {
-							setCatalogError("remote.session unavailable");
-							setCatalogState("failed");
-							return;
-						}
-						const result = await Promise.race([
-							sessionApi.modelCatalog(),
-							typeof clientTimer === "object" && clientTimer !== null && typeof clientTimer.timeout === "function"
-								? clientTimer.timeout(3000).then(() => null)
-								: new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
-						]);
-						if (result === null) {
-							setCatalogError("modelCatalog timeout");
-							setCatalogState("failed");
-							return;
-						}
-						if (disposed) return;
-						if (result === null || typeof result !== "object" || result.ok !== true) {
-							setCatalogError("modelCatalog failed");
-							setCatalogState("failed");
-							return;
-						}
-						const groups = result.value !== null && typeof result.value === "object" && Array.isArray(result.value.groups)
-							? result.value.groups
-							: [];
-						const providers = groups
-							.filter((group) => group !== null && typeof group === "object" && typeof group.id === "string" && group.id.length > 0)
-							.map((group) => ({
-								provider: group.id,
-								name: typeof group.name === "string" ? group.name : group.id,
-								models: Array.isArray(group.models)
-									? group.models.filter((model) => model !== null && typeof model === "object" && typeof model.id === "string" && model.id.length > 0)
-									: [],
-							}));
-						setCatalog({ providers });
-						setCatalogState("ready");
-						if (providers.length === 0) setCatalogError("empty catalog");
-					} catch (caught) {
-						if (disposed) return;
-						setCatalogError(caught instanceof Error && caught.message.length > 0 ? caught.message : String(caught));
-						setCatalogState("failed");
-					}
-				})();
-				return () => {
-					disposed = true;
-				};
+				setCatalogError("catalog unavailable in this client context; use manual input");
+				setCatalogState("failed");
+				return undefined;
 			}, [open, catalogState]);
 
 			// Escape, or a press outside the anchor, dismisses the popup.
