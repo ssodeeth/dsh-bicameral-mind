@@ -2,6 +2,16 @@
 
 本项目的所有重要变更都记录在这个文件里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1] - 2026-10-30
+
+### 修复
+
+- **右脑模型选择器改走内置数据源**：输入框选择器直接调用 Host 的 `remote.session.modelCatalog()`（与自带主选择器完全相同），不再经过插件自己的 HTTP 目录接口，并移除前端自定义超时 / force 逻辑。手动填 provider/model 仍作为最后兜底。
+
+### 验证
+
+- 70 项 `node --test` 通过；选择器数据源切换需刷新页面后在浏览器内确认。
+
 ## [1.2.0] - 2026-10-30
 
 ### 新增 / 修复

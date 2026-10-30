@@ -2378,7 +2378,7 @@ window.__ModuleLoader__.load({
 		 * "follow" clears the pin. Escape, an outside press, or the trigger closes
 		 * the popup; without a session id nothing renders.
 		 */
-		function BicameralModelPicker({ sessionId, t }) {
+		function BicameralModelPicker({ sessionId, t, remote }) {
 			const [examiner, setExaminer] = React.useState({ override: null, routes: [] });
 			const [open, setOpen] = React.useState(false);
 			const [catalog, setCatalog] = React.useState(null);
@@ -2448,29 +2448,38 @@ window.__ModuleLoader__.load({
 				};
 			}, [syncExaminer]);
 
-			// Lazy-load the catalog the first time the popup opens. Force a fresh
-			// read so a previous timed-out/degraded cache does not stick.
+			// Load the catalog through the same Host RPC the built-in model
+			// selector uses, so the picker sees exactly the same provider/model set.
 			React.useEffect(() => {
 				if (!open || catalogState !== "idle") return undefined;
 				let disposed = false;
-				const controller = new AbortController();
-				const timer = setTimeout(() => controller.abort(), 8000);
 				setCatalogState("loading");
 				(async () => {
 					try {
-						const response = await fetch("/bicameral-mind/models?force=1", {
-							method: "GET",
-							cache: "no-store",
-							headers: { accept: "application/json" },
-							signal: controller.signal,
-						});
-						const payload = await readJsonResponse(response);
-						if (disposed) return;
-						if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true || !Array.isArray(payload.providers)) {
+						const sessionApi = remote !== null && typeof remote === "object" ? remote.session : undefined;
+						if (sessionApi === null || typeof sessionApi !== "object" || typeof sessionApi.modelCatalog !== "function") {
 							setCatalogState("failed");
 							return;
 						}
-						setCatalog({ providers: payload.providers });
+						const result = await sessionApi.modelCatalog();
+						if (disposed) return;
+						if (result === null || typeof result !== "object" || result.ok !== true) {
+							setCatalogState("failed");
+							return;
+						}
+						const groups = result.value !== null && typeof result.value === "object" && Array.isArray(result.value.groups)
+							? result.value.groups
+							: [];
+						const providers = groups
+							.filter((group) => group !== null && typeof group === "object" && typeof group.id === "string" && group.id.length > 0)
+							.map((group) => ({
+								provider: group.id,
+								name: typeof group.name === "string" ? group.name : group.id,
+								models: Array.isArray(group.models)
+									? group.models.filter((model) => model !== null && typeof model === "object" && typeof model.id === "string" && model.id.length > 0)
+									: [],
+							}));
+						setCatalog({ providers });
 						setCatalogState("ready");
 					} catch {
 						if (disposed) return;
@@ -2479,8 +2488,6 @@ window.__ModuleLoader__.load({
 				})();
 				return () => {
 					disposed = true;
-					clearTimeout(timer);
-					controller.abort();
 				};
 			}, [open, catalogState]);
 
@@ -4009,7 +4016,10 @@ window.__ModuleLoader__.load({
 					id: "bicameral-mind-model",
 					order: 40,
 					locale: NS,
-				}, BicameralModelPicker));
+				}, (props) => h(BicameralModelPicker, {
+					...props,
+					remote: ctx.remote ?? ctx.get?.("remote"),
+				})));
 
 				// Settings navigation row + page; `label` is resolved live through
 				// the locale face so a language switch renames the row. A missing
