@@ -2490,7 +2490,7 @@ window.__ModuleLoader__.load({
 				return () => {
 					disposed = true;
 				};
-			}, [open, catalogState]);
+			}, [open]);
 
 			// Escape, or a press outside the anchor, dismisses the popup.
 			React.useEffect(() => {
