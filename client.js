@@ -2458,13 +2458,38 @@ window.__ModuleLoader__.load({
 				};
 			}, [syncExaminer]);
 
-			// This dynamic Client half has no direct Host catalog access; open the
-			// manual provider/model form instead of leaving a spinner forever.
+			// Use exactly the same catalog request as the settings page.
 			React.useEffect(() => {
 				if (!open || catalogState !== "idle") return undefined;
-				setCatalogError("catalog unavailable in this client context; use manual input");
-				setCatalogState("failed");
-				return undefined;
+				let disposed = false;
+				setCatalogState("loading");
+				setCatalogError("");
+				(async () => {
+					try {
+						const response = await fetch("/bicameral-mind/models", {
+							method: "GET",
+							cache: "no-store",
+							headers: { accept: "application/json" },
+						});
+						const payload = await readJsonResponse(response);
+						if (disposed) return;
+						if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true || !Array.isArray(payload.providers)) {
+							setCatalogError(`HTTP ${response.status}`);
+							setCatalogState("failed");
+							return;
+						}
+						setCatalog({ providers: payload.providers });
+						setCatalogState("ready");
+						if (payload.providers.length === 0) setCatalogError("empty catalog");
+					} catch (caught) {
+						if (disposed) return;
+						setCatalogError(caught instanceof Error && caught.message.length > 0 ? caught.message : String(caught));
+						setCatalogState("failed");
+					}
+				})();
+				return () => {
+					disposed = true;
+				};
 			}, [open, catalogState]);
 
 			// Escape, or a press outside the anchor, dismisses the popup.
@@ -3957,7 +3982,7 @@ window.__ModuleLoader__.load({
 		}
 
 		return {
-			inject: ["slots", "locale", "remote.session"],
+			inject: ["slots", "locale"],
 			apply(ctx) {
 				resolveHostRemote = () => {
 					try {
