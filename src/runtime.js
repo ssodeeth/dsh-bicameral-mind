@@ -1089,6 +1089,34 @@ export function createRuntime(ctx, config) {
 	/** Provider/model catalog for the settings page, cached briefly. */
 	async function availableModels(force = false) {
 		if (force !== true && modelCatalog !== undefined && nowMs() - modelCatalogAt < 60000) return modelCatalog
+		// Prefer the session controller's catalog: it is exactly what the built-in
+		// model selector uses, including model discovery and reasoning metadata.
+		const sessionController = ctx.get?.('sessionController')
+		if (sessionController !== null && typeof sessionController === 'object' && typeof sessionController.modelCatalog === 'function') {
+			try {
+				const timeout = new Promise((resolve) => setTimeout(() => resolve(undefined), 2000))
+				const catalog = await Promise.race([sessionController.modelCatalog(), timeout])
+				const groups = catalog !== null && typeof catalog === 'object' && Array.isArray(catalog.groups) ? catalog.groups : []
+				if (groups.length > 0) {
+					const providers = groups
+						.filter((group) => group !== null && typeof group === 'object' && typeof group.id === 'string' && group.id.length > 0)
+						.map((group) => ({
+							provider: group.id,
+							name: typeof group.name === 'string' ? group.name : group.id,
+							models: Array.isArray(group.models)
+								? group.models
+										.filter((model) => model !== null && typeof model === 'object' && typeof model.id === 'string' && model.id.length > 0)
+										.map((model) => ({ id: model.id, name: typeof model.name === 'string' ? model.name : model.id }))
+								: [],
+						}))
+					modelCatalog = { providers, fetchedAt: nowMs() }
+					modelCatalogAt = nowMs()
+					return modelCatalog
+				}
+			} catch {
+				/* fall back to the per-adapter discovery below */
+			}
+		}
 		const llm = ctx.get?.('llm')
 		let infos = []
 		try {
