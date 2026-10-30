@@ -2455,8 +2455,8 @@ window.__ModuleLoader__.load({
 				};
 			}, [syncExaminer]);
 
-			// Load the catalog through the same Host RPC the built-in model
-			// selector uses, so the picker sees exactly the same provider/model set.
+			// Load the catalog from the plugin's own Host route; the settings page
+			// uses the same route, so both surfaces show the same provider set.
 			React.useEffect(() => {
 				if (!open || catalogState !== "idle") return undefined;
 				let disposed = false;
@@ -2466,47 +2466,33 @@ window.__ModuleLoader__.load({
 					try {
 						const remote = typeof resolveHostRemote === "function" ? resolveHostRemote() : hostRemote;
 						const sessionApi = remote !== null && typeof remote === "object" ? remote.session : undefined;
-						if (sessionApi !== null && typeof sessionApi === "object" && typeof sessionApi.modelCatalog === "function") {
-							try {
-								const result = await sessionApi.modelCatalog();
-								if (disposed) return;
-								if (result !== null && typeof result === "object" && result.ok === true) {
-									const groups = result.value !== null && typeof result.value === "object" && Array.isArray(result.value.groups)
-										? result.value.groups
-										: [];
-									const providers = groups
-										.filter((group) => group !== null && typeof group === "object" && typeof group.id === "string" && group.id.length > 0)
-										.map((group) => ({
-											provider: group.id,
-											name: typeof group.name === "string" ? group.name : group.id,
-											models: Array.isArray(group.models)
-												? group.models.filter((model) => model !== null && typeof model === "object" && typeof model.id === "string" && model.id.length > 0)
-												: [],
-										}));
-									setCatalog({ providers });
-									setCatalogState("ready");
-									if (providers.length === 0) setCatalogError("empty catalog");
-									return;
-								}
-							} catch {
-								/* fall through to the HTTP route */
-							}
-						}
-						// Compatibility fallback for a client context without a usable Remote.
-						const response = await fetch("/bicameral-mind/models", {
-							method: "GET",
-							cache: "no-store",
-							headers: { accept: "application/json" },
-						});
-						const payload = await readJsonResponse(response);
-						if (disposed) return;
-						if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true || !Array.isArray(payload.providers)) {
-							setCatalogError(`HTTP ${response.status}`);
+						if (sessionApi === null || typeof sessionApi !== "object" || typeof sessionApi.modelCatalog !== "function") {
+							setCatalogError("remote.session unavailable");
 							setCatalogState("failed");
 							return;
 						}
-						setCatalog({ providers: payload.providers });
+						const result = await sessionApi.modelCatalog();
+						if (disposed) return;
+						if (result === null || typeof result !== "object" || result.ok !== true) {
+							setCatalogError("modelCatalog failed");
+							setCatalogState("failed");
+							return;
+						}
+						const groups = result.value !== null && typeof result.value === "object" && Array.isArray(result.value.groups)
+							? result.value.groups
+							: [];
+						const providers = groups
+							.filter((group) => group !== null && typeof group === "object" && typeof group.id === "string" && group.id.length > 0)
+							.map((group) => ({
+								provider: group.id,
+								name: typeof group.name === "string" ? group.name : group.id,
+								models: Array.isArray(group.models)
+									? group.models.filter((model) => model !== null && typeof model === "object" && typeof model.id === "string" && model.id.length > 0)
+									: [],
+							}));
+						setCatalog({ providers });
 						setCatalogState("ready");
+						if (providers.length === 0) setCatalogError("empty catalog");
 					} catch (caught) {
 						if (disposed) return;
 						setCatalogError(caught instanceof Error && caught.message.length > 0 ? caught.message : String(caught));
@@ -4008,7 +3994,7 @@ window.__ModuleLoader__.load({
 		}
 
 		return {
-			inject: ["slots", "locale", "remote"],
+			inject: ["slots", "locale", "remote.session"],
 			apply(ctx) {
 				resolveHostRemote = () => {
 					try {
