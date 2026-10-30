@@ -32,6 +32,9 @@ export const LEVEL_PATH = '/bicameral-mind/level'
 /** Settings page: apply one cost-guardrail preset. */
 export const BUDGET_PATH = '/bicameral-mind/budget'
 
+/** Inner-dialogue view: resolve or clear outstanding issues. */
+export const ISSUES_PATH = '/bicameral-mind/issues'
+
 /** Read a bounded JSON request body; an oversized body is drained and rejected. */
 async function readJsonBody(req, limit = 8192) {
 	const chunks = []
@@ -323,6 +326,44 @@ export function registerWebUi(scope, runtime) {
 						return
 					}
 					sendJson(res, 200, { ok: true, ...runtime.configView() })
+				} catch (error) {
+					sendJson(res, 400, { ok: false, message: error?.message ?? String(error) })
+				}
+			},
+		}),
+	)
+
+	disposers.push(
+		webServer.register({
+			kind: 'exact',
+			path: ISSUES_PATH,
+			handler: async (req, res) => {
+				const refusal = fence(scope, req)
+				if (refusal !== undefined) {
+					res.statusCode = refusal
+					res.end()
+					return
+				}
+				if (req.method !== 'POST') {
+					res.setHeader('allow', 'POST')
+					sendJson(res, 405, { ok: false, message: 'POST required' })
+					return
+				}
+				try {
+					const body = await readJsonBody(req, 8192)
+					const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
+					if (sessionId.length === 0) {
+						sendJson(res, 400, { ok: false, message: 'sessionId is required' })
+						return
+					}
+					const result = body?.all === true
+						? runtime.clearIssues(sessionId)
+						: runtime.resolveIssues(sessionId, body?.problems)
+					if (!result.ok) {
+						sendJson(res, result.message === 'session not found' ? 404 : 400, { ok: false, message: result.message })
+						return
+					}
+					sendJson(res, 200, { ok: true, resolved: result.resolved, remaining: result.remaining })
 				} catch (error) {
 					sendJson(res, 400, { ok: false, message: error?.message ?? String(error) })
 				}

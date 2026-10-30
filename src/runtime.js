@@ -1038,6 +1038,25 @@ export function createRuntime(ctx, config) {
 		return outcome.ok ? { ok: true, tier: id } : outcome
 	}
 
+	/** Human-driven resolution of outstanding issues (Web "inner dialogue" view). */
+	function resolveIssues(sessionId, problems) {
+		if (typeof sessionId !== 'string' || sessionId.length === 0) return { ok: false, message: 'sessionId is required' }
+		const state = store.peek(sessionId)
+		if (state === undefined) return { ok: false, message: 'session not found' }
+		const texts = Array.isArray(problems)
+			? problems.filter((text) => typeof text === 'string' && text.trim().length > 0).map((text) => text.trim()).slice(0, 20)
+			: []
+		return { ok: true, ...store.resolveIssues(sessionId, texts) }
+	}
+
+	/** Human-driven "clear all" for one session. */
+	function clearIssues(sessionId) {
+		if (typeof sessionId !== 'string' || sessionId.length === 0) return { ok: false, message: 'sessionId is required' }
+		const state = store.peek(sessionId)
+		if (state === undefined) return { ok: false, message: 'session not found' }
+		return { ok: true, ...store.clearIssues(sessionId) }
+	}
+
 	/** Provider/model catalog for the settings page, cached briefly. */
 	async function availableModels(force = false) {
 		if (force !== true && modelCatalog !== undefined && nowMs() - modelCatalogAt < 60000) return modelCatalog
@@ -1149,6 +1168,8 @@ export function createRuntime(ctx, config) {
 		applyLevel,
 		applyBudgetPreset,
 		budgetText,
+		resolveIssues,
+		clearIssues,
 		availableModels,
 		probeVoice,
 		configView,

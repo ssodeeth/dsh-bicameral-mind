@@ -554,7 +554,7 @@ describe('diagnostics route', () => {
 		}
 		const { ctx } = createFakeCtx({ webServer })
 		apply(ctx, { enabled: true })
-		assert.equal(routes.length, 7)
+		assert.equal(routes.length, 8)
 		const stateRoute = routes.find((route) => route.path === '/bicameral-mind/state')
 		const toggleRoute = routes.find((route) => route.path === '/bicameral-mind/toggle')
 
@@ -607,6 +607,7 @@ describe('diagnostics route', () => {
 		const probeRoute = routes.find((route) => route.path === '/bicameral-mind/probe')
 		const levelRoute = routes.find((route) => route.path === '/bicameral-mind/level')
 		const budgetRoute = routes.find((route) => route.path === '/bicameral-mind/budget')
+		const issuesRoute = routes.find((route) => route.path === '/bicameral-mind/issues')
 		const sameOrigin = { host: '127.0.0.1:46843', 'sec-fetch-site': 'same-origin' }
 
 		const got = createRes()
@@ -731,6 +732,34 @@ describe('diagnostics route', () => {
 		}
 		await budgetRoute.handler(badBudgetRequest, badBudget)
 		assert.equal(badBudget.statusCode, 400)
+
+		const issueMissingSession = createRes()
+		const issueMissingSessionRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/issues',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ problems: ['x'] }))
+			},
+		}
+		await issuesRoute.handler(issueMissingSessionRequest, issueMissingSession)
+		assert.equal(issueMissingSession.statusCode, 400)
+
+		const issueUnknownSession = createRes()
+		const issueUnknownSessionRequest = {
+			method: 'POST',
+			url: '/bicameral-mind/issues',
+			headers: sameOrigin,
+			async *[Symbol.asyncIterator]() {
+				yield Buffer.from(JSON.stringify({ sessionId: 'missing-session', all: true }))
+			},
+		}
+		await issuesRoute.handler(issueUnknownSessionRequest, issueUnknownSession)
+		assert.equal(issueUnknownSession.statusCode, 404)
+
+		const issueWrongMethod = createRes()
+		await issuesRoute.handler({ method: 'GET', url: '/bicameral-mind/issues', headers: sameOrigin }, issueWrongMethod)
+		assert.equal(issueWrongMethod.statusCode, 405)
 
 		// reset persisted settings so later tests see the defaults again
 		const reset = createRes()
@@ -1088,6 +1117,38 @@ describe('stale issue handling', () => {
 		assert.equal(runtime.store.peek(agent.id).pendingIssues.length, 0)
 		assert.equal(runtime.store.pendingIssuesText(agent.id), '')
 		runtime.applyLevel('balanced')
+	})
+	test('human resolve/clear removes issues and snapshot exposes details', () => {
+		const { ctx } = createFakeCtx()
+		const runtime = createRuntime(ctx, {})
+		const sessionId = 'session-issues'
+		runtime.store.recordReviewIssues(sessionId, {
+			verdict: 'revise',
+			stage: 'act',
+			issues: [
+				{ severity: 'must', problem: '没有读回文件验证写入内容', evidence: 'e1', fix: 'f1' },
+				{ severity: 'should', problem: '报告缺少结论段', evidence: 'e2', fix: 'f2' },
+			],
+			turn: 1,
+			step: 2,
+		})
+		const snap = runtime.snapshot(sessionId)
+		const row = snap.sessions[0]
+		assert.equal(row.pendingIssues, 2)
+		assert.equal(row.issues.length, 2)
+		assert.equal(row.issues[0].raisedStep, 2)
+		assert.equal(row.issues[1].severity, 'should')
+
+		const one = runtime.resolveIssues(sessionId, [row.issues[0].problem])
+		assert.deepEqual(one, { ok: true, resolved: 1, remaining: 1 })
+		assert.equal(runtime.snapshot(sessionId).sessions[0].issues.length, 1)
+
+		const all = runtime.clearIssues(sessionId)
+		assert.deepEqual(all, { ok: true, resolved: 1, remaining: 0 })
+		assert.equal(runtime.snapshot(sessionId).sessions[0].issues.length, 0)
+
+		assert.equal(runtime.resolveIssues('missing-session', []).ok, false)
+		assert.equal(runtime.clearIssues('missing-session').ok, false)
 	})
 })
 

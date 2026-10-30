@@ -275,6 +275,27 @@ export class BicameralStore {
 			.join('\n')
 	}
 
+	/** Remove selected outstanding issues (human or examiner resolution). */
+	resolveIssues(sessionId, problems) {
+		const state = this.peek(sessionId)
+		if (state === undefined) return { resolved: 0, remaining: 0 }
+		const texts = Array.isArray(problems) ? problems : []
+		if (texts.length === 0) return { resolved: 0, remaining: state.pendingIssues.length }
+		const before = state.pendingIssues.length
+		state.pendingIssues = state.pendingIssues.filter((issue) => !texts.some((text) => matchesResolved(issue, text)))
+		return { resolved: before - state.pendingIssues.length, remaining: state.pendingIssues.length }
+	}
+
+	/** Remove every outstanding issue for one session. */
+	clearIssues(sessionId) {
+		const state = this.peek(sessionId)
+		if (state === undefined) return { resolved: 0, remaining: 0 }
+		const resolved = state.pendingIssues.length
+		state.pendingIssues = []
+		state.pendingAt = nowMs()
+		return { resolved, remaining: 0 }
+	}
+
 	/** Diagnostics snapshot for the Web panel and the command surface. */
 	snapshot(sessionId) {
 		const state = sessionId === undefined ? undefined : this.sessions.get(sessionId)
@@ -286,6 +307,14 @@ export class BicameralStore {
 					task: truncate(state.task, 500),
 					turn: state.turn,
 					pendingIssues: state.pendingIssues.length,
+					issues: state.pendingIssues.map((issue) => ({
+						severity: issue.severity,
+						problem: issue.problem,
+						fix: issue.fix,
+						raisedTurn: Number.isSafeInteger(issue.raisedTurn) ? issue.raisedTurn : -1,
+						raisedStep: Number.isSafeInteger(issue.raisedStep) ? issue.raisedStep : -1,
+						at: issue.at ?? 0,
+					})),
 					lastEntryAt: state.entries[0]?.at ?? 0,
 					entries: state.entries.slice(0, 12),
 				},

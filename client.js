@@ -93,6 +93,15 @@ window.__ModuleLoader__.load({
 				loading: "正在读取内心对话…",
 				refresh: "刷新",
 				"issue.fix": "修正：",
+				"issues.title": "尚未解决问题",
+				"issues.empty": "当前没有未决问题。",
+				"issues.clear": "全部清空",
+				"issues.confirmClear": "确认清空",
+				"issues.resolve": "核销",
+				"issues.resolved": "已核销 {count} 条",
+				"issues.failed": "核销失败，请重试",
+				"issues.age": "第 {turn} 轮 step {step}",
+				"issues.ageTurn": "第 {turn} 轮",
 				// Composer toolbar right-brain model picker.
 				"pick.trigger": "选择右脑模型",
 				"pick.follow": "跟随",
@@ -241,6 +250,15 @@ window.__ModuleLoader__.load({
 				loading: "Loading the inner dialogue…",
 				refresh: "Refresh",
 				"issue.fix": "Fix: ",
+				"issues.title": "Unresolved issues",
+				"issues.empty": "No unresolved issues.",
+				"issues.clear": "Clear all",
+				"issues.confirmClear": "Confirm clear",
+				"issues.resolve": "Resolve",
+				"issues.resolved": "Resolved {count}",
+				"issues.failed": "Resolve failed, please retry",
+				"issues.age": "turn {turn}, step {step}",
+				"issues.ageTurn": "turn {turn}",
 				// Composer toolbar right-brain model picker.
 				"pick.trigger": "Choose the right-brain model",
 				"pick.follow": "follow session",
@@ -745,6 +763,97 @@ window.__ModuleLoader__.load({
   line-height: 18px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.bcm-view-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-secondary, var(--dsw-alias-border-base));
+  border-radius: var(--dsw-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-1, transparent);
+}
+.bcm-view-pendingHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bcm-view-pendingTitle {
+  flex: 1 1 auto;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.bcm-view-pendingClear {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-secondary, var(--dsw-alias-border-base));
+  border-radius: var(--dsw-radius-sm, 4px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.bcm-view-pendingClear:hover:not(:disabled) {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+}
+.bcm-view-pendingClear:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.bcm-view-pendingIssue {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: var(--dsw-alias-bg-layer-2, transparent);
+}
+.bcm-view-pendingIssue[data-severity="must"] {
+  border-left: 2px solid var(--dsw-alias-state-error-primary);
+}
+.bcm-view-pendingIssue[data-severity="should"] {
+  border-left: 2px solid var(--dsw-alias-state-warn-primary);
+}
+.bcm-view-meta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+.bcm-view-resolve {
+  flex: none;
+  align-self: center;
+  padding: 3px 10px;
+  border: 1px solid var(--dsw-alias-border-secondary, var(--dsw-alias-border-base));
+  border-radius: var(--dsw-radius-sm, 4px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.bcm-view-resolve:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.bcm-view-resolve:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.bcm-view-pendingEmpty {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.bcm-view-pendingError {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
 }
 .bcm-view-transcript {
   display: flex;
@@ -1596,6 +1705,9 @@ window.__ModuleLoader__.load({
 			const [failures, setFailures] = React.useState(0);
 			const [toggling, setToggling] = React.useState(false);
 			const [toggleError, setToggleError] = React.useState(false);
+			const [issueBusy, setIssueBusy] = React.useState("");
+			const [issueError, setIssueError] = React.useState("");
+			const [clearArmed, setClearArmed] = React.useState(false);
 			const loadRef = React.useRef(null);
 			const openedOnce = React.useRef(false);
 
@@ -1705,6 +1817,57 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			/** Resolve one outstanding issue after the user confirms it by hand. */
+			const resolveIssue = async (problem) => {
+				if (!hasSession || issueBusy.length > 0) return;
+				setIssueBusy(problem);
+				setIssueError("");
+				try {
+					const response = await fetch("/bicameral-mind/issues", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ sessionId, problems: [problem] }),
+					});
+					const payload = await readJsonResponse(response);
+					if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true) {
+						throw new Error("resolve rejected");
+					}
+					if (typeof loadRef.current === "function") await loadRef.current();
+				} catch {
+					setIssueError(tx("issues.failed"));
+				} finally {
+					setIssueBusy("");
+				}
+			};
+
+			/** Clear every outstanding issue; the first click only arms the button. */
+			const clearIssues = async () => {
+				if (!hasSession || issueBusy.length > 0) return;
+				if (!clearArmed) {
+					setClearArmed(true);
+					return;
+				}
+				setIssueBusy("__all__");
+				setIssueError("");
+				try {
+					const response = await fetch("/bicameral-mind/issues", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ sessionId, all: true }),
+					});
+					const payload = await readJsonResponse(response);
+					if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true) {
+						throw new Error("clear rejected");
+					}
+					if (typeof loadRef.current === "function") await loadRef.current();
+				} catch {
+					setIssueError(tx("issues.failed"));
+				} finally {
+					setIssueBusy("");
+					setClearArmed(false);
+				}
+			};
+
 			if (!hasSession) return null;
 
 			const data = snapshot !== null && typeof snapshot === "object" ? snapshot : null;
@@ -1722,6 +1885,77 @@ window.__ModuleLoader__.load({
 			const examinerDistinct = examinerRoutes.length > 0 && examinerRoutes[0] !== actorRoutes[0];
 			const pinned = voices.examiner !== null && typeof voices.examiner === "object" && voices.examiner.pinned === true;
 			const pending = row !== null && Number.isSafeInteger(row.pendingIssues) ? row.pendingIssues : 0;
+			const pendingDetails = row !== null && Array.isArray(row.issues)
+				? row.issues.filter((issue) => issue !== null && typeof issue === "object" && typeof issue.problem === "string" && issue.problem.length > 0).slice(0, 6)
+				: [];
+			const hasPendingDetails = row !== null && Array.isArray(row.issues);
+			const pendingBlock = !hasPendingDetails
+				? null
+				: h(
+						"section",
+						{ className: "bcm-view-pending", "aria-label": tx("issues.title") },
+						h(
+							"div",
+							{ className: "bcm-view-pendingHead" },
+							h("span", { className: "bcm-view-pendingTitle" }, tx("issues.title")),
+							pendingDetails.length > 0 ? h("span", { className: "bcm-view-badge" }, String(pendingDetails.length)) : null,
+							pendingDetails.length > 0
+								? h(
+										"button",
+										{
+											type: "button",
+											className: "bcm-view-pendingClear",
+											disabled: issueBusy.length > 0,
+											onClick: clearIssues,
+										},
+										clearArmed ? tx("issues.confirmClear") : tx("issues.clear"),
+									)
+								: null,
+						),
+						pendingDetails.length === 0
+							? h("p", { className: "bcm-view-pendingEmpty" }, tx("issues.empty"))
+							: h(
+									"div",
+									{ className: "bcm-view-issues" },
+									pendingDetails.map((issue, index) => {
+										const severity = issue.severity === "must" ? "must" : "should";
+										const problem = issue.problem;
+										const fix = typeof issue.fix === "string" ? issue.fix : "";
+										const turn = Number.isSafeInteger(issue.raisedTurn) ? issue.raisedTurn : -1;
+										const step = Number.isSafeInteger(issue.raisedStep) ? issue.raisedStep : -1;
+										const age = turn < 0
+											? ""
+											: (step >= 0 ? tx("issues.age", { turn, step }) : tx("issues.ageTurn", { turn }));
+										return h(
+											"div",
+											{
+												className: "bcm-view-pendingIssue",
+												"data-severity": severity,
+												key: `${index}:${problem.slice(0, 48)}`,
+											},
+											h("span", { className: "bcm-view-severity" }, `[${severity}]`),
+											h(
+												"div",
+												{ className: "bcm-view-issueBody" },
+												h("span", { className: "bcm-view-problem" }, problem),
+												fix.length > 0 ? h("span", { className: "bcm-view-fix" }, `${tx("issue.fix")}${fix}`) : null,
+												age.length > 0 ? h("span", { className: "bcm-view-meta" }, age) : null,
+											),
+											h(
+												"button",
+												{
+													type: "button",
+													className: "bcm-view-resolve",
+													disabled: issueBusy.length > 0,
+													onClick: () => resolveIssue(problem),
+												},
+												issueBusy === problem ? "…" : tx("issues.resolve"),
+											),
+										);
+									}),
+								),
+						issueError.length > 0 ? h("p", { className: "bcm-view-pendingError", role: "status" }, issueError) : null,
+					);
 			const routeUnavailable = failures > FAILURE_LIMIT;
 			const loading = data === null && !routeUnavailable;
 
@@ -1902,7 +2136,7 @@ window.__ModuleLoader__.load({
 				h(
 					"div",
 					{ className: "bcm-view-root", "data-bicameral-mind-view": true },
-					h("div", { className: "bcm-view-inner" }, header, banner, toggleAlert, body),
+					h("div", { className: "bcm-view-inner" }, header, banner, toggleAlert, pendingBlock, body),
 				),
 			);
 		}
