@@ -2,6 +2,16 @@
 
 本项目的所有重要变更都记录在这个文件里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.4] - 2026-10-30
+
+### 修复
+
+- **模型清单不可用**：Client 的 `remote` 服务可能在本插件 `apply()` 之后才挂载，之前只在 apply 时取一次，拿不到就永远走 HTTP 回退。改为每次打开选择器时惰性解析 `remote`（先试 `ctx.remote`，再试 `ctx.get("remote")`），RPC 失败才回退 `/bicameral-mind/models`。
+
+### 验证
+
+- `node --check client.js`、70 项测试通过；本地安装 1.2.4。
+
 ## [1.2.3] - 2026-10-30
 
 ### 修复

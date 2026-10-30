@@ -45,6 +45,9 @@ window.__ModuleLoader__.load({
 		/** Host Remote face captured at mount (same catalog as the built-in selector). */
 		let hostRemote;
 
+		/** Resolve the Remote face lazily; services may mount after this plugin. */
+		let resolveHostRemote;
+
 		/** Snapshot polling interval. */
 		const POLL_MS = 2500;
 
@@ -2459,31 +2462,34 @@ window.__ModuleLoader__.load({
 				setCatalogState("loading");
 				(async () => {
 					try {
-						const sessionApi = hostRemote !== null && typeof hostRemote === "object" ? hostRemote.session : undefined;
+						const remote = typeof resolveHostRemote === "function" ? resolveHostRemote() : hostRemote;
+						const sessionApi = remote !== null && typeof remote === "object" ? remote.session : undefined;
 						if (sessionApi !== null && typeof sessionApi === "object" && typeof sessionApi.modelCatalog === "function") {
-							const result = await sessionApi.modelCatalog();
-							if (disposed) return;
-							if (result === null || typeof result !== "object" || result.ok !== true) {
-								setCatalogState("failed");
-								return;
+							try {
+								const result = await sessionApi.modelCatalog();
+								if (disposed) return;
+								if (result !== null && typeof result === "object" && result.ok === true) {
+									const groups = result.value !== null && typeof result.value === "object" && Array.isArray(result.value.groups)
+										? result.value.groups
+										: [];
+									const providers = groups
+										.filter((group) => group !== null && typeof group === "object" && typeof group.id === "string" && group.id.length > 0)
+										.map((group) => ({
+											provider: group.id,
+											name: typeof group.name === "string" ? group.name : group.id,
+											models: Array.isArray(group.models)
+												? group.models.filter((model) => model !== null && typeof model === "object" && typeof model.id === "string" && model.id.length > 0)
+												: [],
+										}));
+									setCatalog({ providers });
+									setCatalogState("ready");
+									return;
+								}
+							} catch {
+								/* fall through to the HTTP route */
 							}
-							const groups = result.value !== null && typeof result.value === "object" && Array.isArray(result.value.groups)
-								? result.value.groups
-								: [];
-							const providers = groups
-								.filter((group) => group !== null && typeof group === "object" && typeof group.id === "string" && group.id.length > 0)
-								.map((group) => ({
-									provider: group.id,
-									name: typeof group.name === "string" ? group.name : group.id,
-									models: Array.isArray(group.models)
-										? group.models.filter((model) => model !== null && typeof model === "object" && typeof model.id === "string" && model.id.length > 0)
-										: [],
-								}));
-							setCatalog({ providers });
-							setCatalogState("ready");
-							return;
 						}
-						// Compatibility fallback for a client context without `remote`.
+						// Compatibility fallback for a client context without a usable Remote.
 						const response = await fetch("/bicameral-mind/models", {
 							method: "GET",
 							cache: "no-store",
@@ -3999,8 +4005,20 @@ window.__ModuleLoader__.load({
 		return {
 			inject: ["slots", "locale"],
 			apply(ctx) {
+				resolveHostRemote = () => {
+					try {
+						if (ctx.remote) return ctx.remote;
+					} catch {
+						/* service access can throw before injection */
+					}
+					try {
+						return typeof ctx.get === "function" ? ctx.get("remote") : undefined;
+					} catch {
+						return undefined;
+					}
+				};
 				try {
-					hostRemote = typeof ctx.get === "function" ? ctx.get("remote") : undefined;
+					hostRemote = resolveHostRemote();
 				} catch {
 					hostRemote = undefined;
 				}
