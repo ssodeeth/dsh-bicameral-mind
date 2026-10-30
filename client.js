@@ -2391,6 +2391,7 @@ window.__ModuleLoader__.load({
 			const [catalogState, setCatalogState] = React.useState("idle");
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = React.useState("");
+			const [catalogError, setCatalogError] = React.useState("");
 			const [manualOpen, setManualOpen] = React.useState(false);
 			const [manualProvider, setManualProvider] = React.useState("");
 			const [manualModel, setManualModel] = React.useState("");
@@ -2460,6 +2461,7 @@ window.__ModuleLoader__.load({
 				if (!open || catalogState !== "idle") return undefined;
 				let disposed = false;
 				setCatalogState("loading");
+				setCatalogError("");
 				(async () => {
 					try {
 						const remote = typeof resolveHostRemote === "function" ? resolveHostRemote() : hostRemote;
@@ -2483,6 +2485,7 @@ window.__ModuleLoader__.load({
 										}));
 									setCatalog({ providers });
 									setCatalogState("ready");
+									if (providers.length === 0) setCatalogError("empty catalog");
 									return;
 								}
 							} catch {
@@ -2498,13 +2501,15 @@ window.__ModuleLoader__.load({
 						const payload = await readJsonResponse(response);
 						if (disposed) return;
 						if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true || !Array.isArray(payload.providers)) {
+							setCatalogError(`HTTP ${response.status}`);
 							setCatalogState("failed");
 							return;
 						}
 						setCatalog({ providers: payload.providers });
 						setCatalogState("ready");
-					} catch {
+					} catch (caught) {
 						if (disposed) return;
+						setCatalogError(caught instanceof Error && caught.message.length > 0 ? caught.message : String(caught));
 						setCatalogState("failed");
 					}
 				})();
@@ -2650,8 +2655,8 @@ window.__ModuleLoader__.load({
 					followOption,
 					h("div", { className: "bcm-pick-sep", "aria-hidden": true }),
 					catalogState === "loading" ? h("div", { className: "bcm-pick-hint", role: "status" }, tx("pick.loading")) : null,
-					catalogState === "failed" ? h("div", { className: "bcm-pick-error", role: "status" }, tx("pick.failed")) : null,
-					catalogState === "ready" && !hasCatalogGroups ? h("div", { className: "bcm-pick-error", role: "status" }, tx("pick.failed")) : null,
+					catalogState === "failed" ? h("div", { className: "bcm-pick-error", role: "status" }, `${tx("pick.failed")}${catalogError.length > 0 ? ` · ${catalogError}` : ""}`) : null,
+					catalogState === "ready" && !hasCatalogGroups ? h("div", { className: "bcm-pick-error", role: "status" }, `${tx("pick.failed")}${catalogError.length > 0 ? ` · ${catalogError}` : ""}`) : null,
 					catalogState === "ready" ? groups : null,
 					catalogState === "failed"
 						? h(
