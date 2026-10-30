@@ -48,6 +48,9 @@ window.__ModuleLoader__.load({
 		/** Resolve the Remote face lazily; services may mount after this plugin. */
 		let resolveHostRemote;
 
+		/** Client timer service captured at mount (for bounded catalog reads). */
+		let clientTimer;
+
 		/** Snapshot polling interval. */
 		const POLL_MS = 2500;
 
@@ -2471,7 +2474,17 @@ window.__ModuleLoader__.load({
 							setCatalogState("failed");
 							return;
 						}
-						const result = await sessionApi.modelCatalog();
+						const result = await Promise.race([
+							sessionApi.modelCatalog(),
+							typeof clientTimer === "object" && clientTimer !== null && typeof clientTimer.timeout === "function"
+								? clientTimer.timeout(3000).then(() => null)
+								: new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+						]);
+						if (result === null) {
+							setCatalogError("modelCatalog timeout");
+							setCatalogState("failed");
+							return;
+						}
 						if (disposed) return;
 						if (result === null || typeof result !== "object" || result.ok !== true) {
 							setCatalogError("modelCatalog failed");
@@ -4008,6 +4021,11 @@ window.__ModuleLoader__.load({
 						return undefined;
 					}
 				};
+				try {
+					clientTimer = typeof ctx.get === "function" ? ctx.get("timer") : undefined;
+				} catch {
+					clientTimer = undefined;
+				}
 				try {
 					hostRemote = resolveHostRemote();
 				} catch {
