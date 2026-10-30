@@ -42,15 +42,6 @@ window.__ModuleLoader__.load({
 		/** Locale namespace carried by the slot registration. */
 		const NS = "bicameralMind";
 
-		/** Host Remote face captured at mount (same catalog as the built-in selector). */
-		let hostRemote;
-
-		/** Resolve the Remote face lazily; services may mount after this plugin. */
-		let resolveHostRemote;
-
-		/** Client timer service captured at mount (for bounded catalog reads). */
-		let clientTimer;
-
 		/** Snapshot polling interval. */
 		const POLL_MS = 2500;
 
@@ -3984,28 +3975,6 @@ window.__ModuleLoader__.load({
 		return {
 			inject: ["slots", "locale"],
 			apply(ctx) {
-				resolveHostRemote = () => {
-					try {
-						if (ctx.remote) return ctx.remote;
-					} catch {
-						/* service access can throw before injection */
-					}
-					try {
-						return typeof ctx.get === "function" ? ctx.get("remote") : undefined;
-					} catch {
-						return undefined;
-					}
-				};
-				try {
-					clientTimer = typeof ctx.get === "function" ? ctx.get("timer") : undefined;
-				} catch {
-					clientTimer = undefined;
-				}
-				try {
-					hostRemote = resolveHostRemote();
-				} catch {
-					hostRemote = undefined;
-				}
 				// Own copy is registered through the locale service; a host that
 				// already owns this namespace must not make either surface fail.
 				ctx.effect(() => {

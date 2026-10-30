@@ -2,15 +2,27 @@
 
 本项目的所有重要变更都记录在这个文件里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.5] - 2026-10-30
+
+### 修复
+
+- **右脑模型清单真正加载**：选择器的加载 effect 依赖里包含了自己会修改的 `catalogState`。`setCatalogState("loading")` 立即触发 cleanup 并把 `disposed` 设为 `true`，请求成功返回后也被丢弃，界面永久停在「正在读取模型清单…」。现在与设置页共用同一个 `GET /bicameral-mind/models`，effect 只依赖 `open`，不再自我取消。
+- 移除 1.2.4 遗留的 `remote` / `timer` 惰性解析模块变量和无效回退；手动填写 provider/model 仅作为目录不可用时的兜底。
+
+### 验证
+
+- `npm run verify`：14 个文件语法检查、70 项测试全部通过。
+- 本地安装 1.2.5，真实 GUI 打开「右脑」选择器可见「跟随设置默认」与各 provider 模型分组。
+
 ## [1.2.4] - 2026-10-30
 
 ### 修复
 
-- **模型清单不可用**：Client 的 `remote` 服务可能在本插件 `apply()` 之后才挂载，之前只在 apply 时取一次，拿不到就永远走 HTTP 回退。改为每次打开选择器时惰性解析 `remote`（先试 `ctx.remote`，再试 `ctx.get("remote")`），RPC 失败才回退 `/bicameral-mind/models`。
+- 尝试在打开选择器时惰性解析 Client `remote` 服务并回退到 `/bicameral-mind/models`；该方向已被 1.2.5 取代。
 
 ### 验证
 
-- `node --check client.js`、70 项测试通过；本地安装 1.2.4。
+- `node --check client.js`、70 项测试通过。
 
 ## [1.2.3] - 2026-10-30
 
