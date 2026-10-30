@@ -2460,29 +2460,42 @@ window.__ModuleLoader__.load({
 				(async () => {
 					try {
 						const sessionApi = hostRemote !== null && typeof hostRemote === "object" ? hostRemote.session : undefined;
-						if (sessionApi === null || typeof sessionApi !== "object" || typeof sessionApi.modelCatalog !== "function") {
-							setCatalogState("failed");
+						if (sessionApi !== null && typeof sessionApi === "object" && typeof sessionApi.modelCatalog === "function") {
+							const result = await sessionApi.modelCatalog();
+							if (disposed) return;
+							if (result === null || typeof result !== "object" || result.ok !== true) {
+								setCatalogState("failed");
+								return;
+							}
+							const groups = result.value !== null && typeof result.value === "object" && Array.isArray(result.value.groups)
+								? result.value.groups
+								: [];
+							const providers = groups
+								.filter((group) => group !== null && typeof group === "object" && typeof group.id === "string" && group.id.length > 0)
+								.map((group) => ({
+									provider: group.id,
+									name: typeof group.name === "string" ? group.name : group.id,
+									models: Array.isArray(group.models)
+										? group.models.filter((model) => model !== null && typeof model === "object" && typeof model.id === "string" && model.id.length > 0)
+										: [],
+								}));
+							setCatalog({ providers });
+							setCatalogState("ready");
 							return;
 						}
-						const result = await sessionApi.modelCatalog();
+						// Compatibility fallback for a client context without `remote`.
+						const response = await fetch("/bicameral-mind/models", {
+							method: "GET",
+							cache: "no-store",
+							headers: { accept: "application/json" },
+						});
+						const payload = await readJsonResponse(response);
 						if (disposed) return;
-						if (result === null || typeof result !== "object" || result.ok !== true) {
+						if (!response.ok || payload === null || typeof payload !== "object" || payload.ok !== true || !Array.isArray(payload.providers)) {
 							setCatalogState("failed");
 							return;
 						}
-						const groups = result.value !== null && typeof result.value === "object" && Array.isArray(result.value.groups)
-							? result.value.groups
-							: [];
-						const providers = groups
-							.filter((group) => group !== null && typeof group === "object" && typeof group.id === "string" && group.id.length > 0)
-							.map((group) => ({
-								provider: group.id,
-								name: typeof group.name === "string" ? group.name : group.id,
-								models: Array.isArray(group.models)
-									? group.models.filter((model) => model !== null && typeof model === "object" && typeof model.id === "string" && model.id.length > 0)
-									: [],
-							}));
-						setCatalog({ providers });
+						setCatalog({ providers: payload.providers });
 						setCatalogState("ready");
 					} catch {
 						if (disposed) return;
@@ -3986,7 +3999,11 @@ window.__ModuleLoader__.load({
 		return {
 			inject: ["slots", "locale"],
 			apply(ctx) {
-				hostRemote = ctx.remote ?? ctx.get?.("remote");
+				try {
+					hostRemote = typeof ctx.get === "function" ? ctx.get("remote") : undefined;
+				} catch {
+					hostRemote = undefined;
+				}
 				// Own copy is registered through the locale service; a host that
 				// already owns this namespace must not make either surface fail.
 				ctx.effect(() => {

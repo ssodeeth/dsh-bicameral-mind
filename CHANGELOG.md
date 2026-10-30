@@ -2,6 +2,16 @@
 
 本项目的所有重要变更都记录在这个文件里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.3] - 2026-10-30
+
+### 修复
+
+- 1.2.2 在 `apply()` 里读取 `ctx.remote` 属性，插件上下文中该属性访问会抛错，导致整个 Client 半区注册失败（右脑选择器和设置页同时消失）。改为只通过 `ctx.get("remote")` 安全获取（失败则回退 `/bicameral-mind/models`），选择器与设置页恢复注册。
+
+### 验证
+
+- `node --check client.js`、70 项测试通过；安装后槽位 occupant 恢复 active。
+
 ## [1.2.2] - 2026-10-30
 
 ### 修复
