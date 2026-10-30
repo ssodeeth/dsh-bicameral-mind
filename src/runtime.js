@@ -210,6 +210,7 @@ export function createRuntime(ctx, config) {
 			summary: `右脑暂不可用：${truncate(reason, 300)}`,
 			issues: [],
 			questions: [],
+			resolved: [],
 			rounds: 0,
 			depth,
 			stage,
@@ -449,7 +450,10 @@ export function createRuntime(ctx, config) {
 					verdict: parsed.verdict,
 					stage,
 					issues: parsed.issues,
+					resolved: parsed.resolved,
 					deliberate: params.origin === 'tool' || params.origin === 'command',
+					turn: state?.turn,
+					step: state?.step,
 				})
 			}
 			record(sessionId, {
@@ -469,6 +473,7 @@ export function createRuntime(ctx, config) {
 				summary: parsed.summary,
 				issues: parsed.issues,
 				questions: parsed.questions,
+				resolved: parsed.resolved,
 				rounds,
 				depth,
 				stage,
@@ -575,8 +580,10 @@ export function createRuntime(ctx, config) {
 		state.lastAutoAt = nowMs()
 		const evidence = [
 			`刚完成的动作：${trigger.name}`,
-			store.evidenceFromActions(agent.id, 2),
-			'先判断这次动作是否真的产生了副作用（只读查询不应被当作写入/删除）；再判断它与用户任务目标的关系。',
+			`当前进度：第 ${state.turn} 轮 / step ${state.step}`,
+			store.evidenceFromActions(agent.id, 3),
+			'这次只审查刚完成的动作及其直接后果：先判断是否真的产生了副作用（只读查询不应被当作写入/删除），再判断它与用户任务目标的关系。',
+			'此前未确认的问题如果已经在最近证据里被修复，请在裁决的 resolved 中列出它（引用问题原文），不要再次列进 issues，也不要因此给 revise。',
 		].join('\n')
 		const outcome = await review({
 			agent,
@@ -681,7 +688,7 @@ export function createRuntime(ctx, config) {
 				: [
 						`左脑的最终回答：\n${truncate(finalText, 1600)}`,
 						`此前右脑提出、但尚未确认处理的问题：\n${pending}`,
-						`请判断最终回答是否已实际回应并解决这些问题（不是口头承认）。`,
+						`请判断最终回答是否已实际回应并解决这些问题（不是口头承认）。已解决的旧问题请在 resolved 中列出，未解决的再列进 issues。`,
 					].join('\n\n')
 			const outcome = await review({
 				agent,

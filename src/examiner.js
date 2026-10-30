@@ -182,6 +182,21 @@ function readQuestions(value, limit = 5) {
   return out;
 }
 
+/** 读取右脑主动核销的旧问题（problem 原文或其可识别片段）。 */
+function readResolved(value, limit = 5) {
+  const source = Array.isArray(value)
+    ? value
+    : (typeof value === 'string' && value.trim() ? [value] : []);
+  const out = [];
+  for (const entry of source) {
+    const text = asString(entry).trim();
+    if (!text) continue;
+    out.push(clip(text, LIMIT.summary));
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ */
 /* 提示词：右脑系统提示                                                */
 /* ------------------------------------------------------------------ */
@@ -253,11 +268,13 @@ export function buildExaminerSystem({ stage, language, maxIssues } = {}) {
     '- revise：存在必须修正的问题，issues 中至少有 1 条 severity 为 "must"。',
     '- block：方向错误、不可逆风险未经确认、或与用户目标冲突——应立即停下并说明。',
     `- issues 最多 ${max} 条，按 must 优先；不严重的问题用 "should"，不要凑数凑长度。`,
+    '- 旧问题可能已经在后续动作中被修复：只有当前证据仍支撑时才继续列进 issues；如果证据表明它已被解决，把它写进 resolved 并从 issues 中移除。不要把已解决的问题重新提出来凑数。',
     '- 每条 problem / evidence / fix 各不超过 80 字；整段 JSON 保持紧凑，**必须完整闭合**（输出有长度上限，宁短勿断）。',
     '',
     '## 输出格式（只输出唯一一个 JSON 对象，不要 Markdown 代码围栏，不要任何额外解释）',
-    '{"verdict":"pass|revise|block","summary":"一句话结论","issues":[{"severity":"must|should","problem":"具体偏差","evidence":"引用任务原文/动作参数/结果片段","fix":"最小修正动作"}],"questions":["仅在必须问用户时才填"]}',
+    '{"verdict":"pass|revise|block","summary":"一句话结论","issues":[{"severity":"must|should","problem":"具体偏差","evidence":"引用任务原文/动作参数/结果片段","fix":"最小修正动作"}],"resolved":["此前提出、当前证据已证明解决的问题原文"],"questions":["仅在必须问用户时才填"]}',
     '- summary 一句话说清结论；revise / block 时点出最关键的一条。',
+    '- resolved 只在确实能引用当前证据证明旧问题已解决时填写，否则给空数组 []。',
     '- questions 只在真的必须由用户决定时才填，否则给空数组 []；不要把审查意见伪装成问题。',
     '',
     '## 输出语言',
@@ -282,7 +299,7 @@ export function buildExaminerUser({ stage, task, claim, evidence, priorIssues, r
   if (evidenceText) sections.push(`## 证据（工具调用与结果；这是你唯一的独立信息源）\n${evidenceText}`);
 
   const priorText = clip(priorIssues, LIMIT.priorIssues);
-  if (priorText) sections.push(`## 上一轮右脑尚未解决的问题\n${priorText}`);
+  if (priorText) sections.push(`## 此前未确认的问题（可能已被后续动作修复）\n${priorText}\n\n如果当前证据证明其中某条已经解决，请把它写进 resolved，而不是再次列进 issues。`);
 
   const rebuttalText = clip(rebuttal, LIMIT.claim);
   if (rebuttalText) sections.push(`## 左脑的答辩\n${rebuttalText}`);
@@ -446,6 +463,7 @@ function emptyResult() {
     summary: TEXT.emptyOutput,
     issues: [],
     questions: [],
+    resolved: [],
     parseMode: 'heuristic',
   };
 }
@@ -484,6 +502,7 @@ function heuristicParse(text) {
     summary,
     issues,
     questions: [],
+    resolved: [],
     parseMode: 'heuristic',
   };
 }
@@ -504,6 +523,7 @@ function finalizeParsed(obj, rawText) {
     summary,
     issues,
     questions: readQuestions(obj.questions, 5),
+    resolved: readResolved(obj.resolved, 5),
     parseMode: 'json',
   };
 }

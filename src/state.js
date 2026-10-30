@@ -26,6 +26,19 @@ function issueKey(issue) {
 	return `${problem.slice(0, 120)}\u0000${issue?.severity === 'must' ? 'must' : 'should'}`
 }
 
+/** Normalize problem text for resolved/outstanding matching. */
+function normalizeProblem(value) {
+	return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+/** Whether one outstanding issue is the one the examiner just resolved. */
+function matchesResolved(issue, resolvedText) {
+	const a = normalizeProblem(issue?.problem)
+	const b = normalizeProblem(resolvedText)
+	if (a.length < 6 || b.length < 6) return false
+	return a === b || a.includes(b) || b.includes(a)
+}
+
 /** Bound one transcript entry's long fields before it is stored or shown. */
 function boundEntry(entry) {
 	const issues = Array.isArray(entry.issues)
@@ -213,8 +226,15 @@ export class BicameralStore {
 	 * re-examination (`finish`/`checkpoint`, or an explicit tool call) may clear
 	 * them on a pass, which is what lets the end-of-turn gate converge.
 	 */
-	recordReviewIssues(sessionId, { verdict, stage, issues, deliberate }) {
+	recordReviewIssues(sessionId, { verdict, stage, issues, resolved, deliberate, turn, step }) {
 		const state = this.stateFor(sessionId)
+		const cleared = Array.isArray(resolved) ? resolved : []
+		if (cleared.length > 0) {
+			// The examiner may explicitly retire old issues when newer evidence
+			// proves they were fixed; this is what keeps a step-1 objection from
+			// haunting step 3.
+			state.pendingIssues = state.pendingIssues.filter((issue) => !cleared.some((text) => matchesResolved(issue, text)))
+		}
 		if (verdict === 'pass') {
 			const clears = deliberate === true || stage === 'finish' || stage === 'checkpoint'
 			if (!clears) return
@@ -233,6 +253,8 @@ export class BicameralStore {
 				evidence: truncate(issue?.evidence, 400),
 				fix: truncate(issue?.fix, 400),
 				at: nowMs(),
+				raisedTurn: Number.isSafeInteger(turn) ? turn : state.turn,
+				raisedStep: Number.isSafeInteger(step) ? step : state.step,
 			})
 		}
 		state.pendingIssues = [...merged.values()].slice(-MAX_PENDING)
@@ -244,7 +266,12 @@ export class BicameralStore {
 		const state = this.peek(sessionId)
 		if (state === undefined || state.pendingIssues.length === 0) return ''
 		return state.pendingIssues
-			.map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.problem} -> ${issue.fix}`)
+			.map((issue, index) => {
+				const age = Number.isSafeInteger(issue.raisedTurn) && issue.raisedTurn >= 0
+					? `（第 ${issue.raisedTurn} 轮${Number.isSafeInteger(issue.raisedStep) ? ` step ${issue.raisedStep}` : ''}提出${state.turn > issue.raisedTurn ? `，${state.turn - issue.raisedTurn} 轮前` : ''}）`
+					: ''
+				return `${index + 1}. [${issue.severity}] ${issue.problem}${age} -> ${issue.fix}`
+			})
 			.join('\n')
 	}
 

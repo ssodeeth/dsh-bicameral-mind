@@ -1054,6 +1054,43 @@ describe('cost guardrails', () => {
 	})
 })
 
+describe('stale issue handling', () => {
+	test('auto reviews can retire old issues via resolved, but a bare pass cannot', async () => {
+		const replies = [
+			'{"verdict":"revise","summary":"没有验证写入","issues":[{"severity":"must","problem":"没有读回文件验证写入内容","evidence":"写入 out.md 后没有读取","fix":"读回并校验行数"}],"questions":[]}',
+			'{"verdict":"pass","summary":"这个动作没问题","issues":[],"questions":[]}',
+			'{"verdict":"pass","summary":"后续已读回","issues":[],"resolved":["没有读回文件验证写入内容"],"questions":[]}',
+		]
+		const { ctx, records } = createFakeCtx({ replies: (index) => replies[index] })
+		const runtime = createRuntime(ctx, {})
+		const agent = createFakeAgent()
+		const next = async () => ({ kind: 'enter', messages: [] })
+		const signal = new AbortController().signal
+		await runtime.handlePreStep(
+			{ agent, messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: '写报告并自检' }], source: { kind: 'user' } }], turn: 1, step: 2, signal },
+			next,
+		)
+
+		await runtime.review({ agent, stage: 'act', claim: '', evidence: '写入 out.md', depth: 'quick', origin: 'auto' })
+		assert.equal(runtime.store.peek(agent.id).pendingIssues.length, 1)
+		const label = runtime.store.pendingIssuesText(agent.id)
+		assert.match(label, /第 1 轮/)
+		assert.match(label, /step 2/)
+
+		// An unrelated pass is not allowed to erase the outstanding must-issue.
+		await runtime.review({ agent, stage: 'act', claim: '', evidence: '执行了另一个不相关动作', depth: 'quick', origin: 'auto' })
+		assert.equal(runtime.store.peek(agent.id).pendingIssues.length, 1)
+		assert.equal(records.llmCalls.length, 2)
+
+		// When newer evidence proves the fix, the examiner retires it explicitly.
+		const retired = await runtime.review({ agent, stage: 'act', claim: '', evidence: '读回 out.md：42 行，字段齐全', depth: 'quick', origin: 'auto' })
+		assert.deepEqual(retired.resolved, ['没有读回文件验证写入内容'])
+		assert.equal(runtime.store.peek(agent.id).pendingIssues.length, 0)
+		assert.equal(runtime.store.pendingIssuesText(agent.id), '')
+		runtime.applyLevel('balanced')
+	})
+})
+
 describe('text consistency', () => {
 	const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 	const shipped = [

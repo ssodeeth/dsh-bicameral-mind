@@ -405,7 +405,7 @@ test('buildExaminerUser: 分区写入，缺失字段整块省略', () => {
   assert.match(onlyTask, /修复登录 bug/);
   assert.ok(!onlyTask.includes('## 证据'));
   assert.ok(!onlyTask.includes('## 左脑的主张'));
-  assert.ok(!onlyTask.includes('## 上一轮右脑尚未解决的问题'));
+  assert.ok(!onlyTask.includes('## 此前未确认的问题'));
   assert.ok(!onlyTask.includes('## 左脑的答辩'));
   assert.match(onlyTask, /计划/);
 
@@ -421,7 +421,7 @@ test('buildExaminerUser: 分区写入，缺失字段整块省略', () => {
     '## 任务',
     '## 左脑的主张',
     '## 证据',
-    '## 上一轮右脑尚未解决的问题',
+    '## 此前未确认的问题',
     '## 左脑的答辩',
   ].map((h) => all.indexOf(h));
   for (const idx of order) assert.ok(idx >= 0, '分区标题必须存在');
@@ -433,8 +433,7 @@ test('buildExaminerUser: 分区写入，缺失字段整块省略', () => {
   assert.ok(buildExaminerUser().length > 0);
 });
 
-test('buildExaminerUser: 超长字段截断', () => {
-  const prompt = buildExaminerUser({
+test('buildExaminerUser: 超长字段截断', () => {  const prompt = buildExaminerUser({
     stage: 'act',
     task: 'T'.repeat(4000),
     evidence: 'E'.repeat(9000),
@@ -523,3 +522,23 @@ test('buildVerdictUser: 逐条判定成立/不成立并要求同一 JSON', () =>
   assert.equal(/T{1501}/.test(long), false);
   assert.equal(/R{1201}/.test(long), false);
 });
+
+test('parseExaminerOutput: resolved 列表可核销旧问题', () => {
+  const parsed = parseExaminerOutput(
+    JSON.stringify({
+      verdict: 'pass',
+      summary: '旧问题已修复',
+      issues: [],
+      resolved: ['未读回文件', ' 边界条件未验证 '],
+      questions: [],
+    }),
+  );
+  assert.deepEqual(parsed.resolved, ['未读回文件', '边界条件未验证']);
+
+  const empty = parseExaminerOutput('{"verdict":"pass","summary":"ok","issues":[],"questions":[]}');
+  assert.deepEqual(empty.resolved, []);
+
+  const single = parseExaminerOutput('{"verdict":"pass","summary":"ok","issues":[],"resolved":"未读回文件","questions":[]}');
+  assert.deepEqual(single.resolved, ['未读回文件']);
+});
+
